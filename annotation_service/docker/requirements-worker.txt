@@ -1,0 +1,4 @@
+addict==2.4.0
+matplotlib==3.7.5
+timm==1.0.28
+yapf==0.43.0

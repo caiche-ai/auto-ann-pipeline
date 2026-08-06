@@ -1,0 +1,44 @@
+# Runtime secrets and local configuration
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*__pycache__*
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Persistent service data and backups
+data/
+data.backup*/
+logs/
+run/
+annotation_service.backup*/
+
+# Vendored external dependencies and generated artifacts
+dependencies/
+*.db
+*.db-*
+*.log
+*.pid
+*.tar
+*.tar.gz
+*.zip
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

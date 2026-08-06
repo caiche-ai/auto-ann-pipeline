@@ -1,0 +1,113 @@
+# LISA 施工安全操作脚本文档
+
+本文档记录当前仓库中围绕施工安全数据、COCO 转 LISA、LoRA 微调和评估分析的主要操作脚本。默认从给定 COCO 原始数据集开始，输入优先按 `data/<dataset_id>/train/_annotations.coco.json` 或 `data/<dataset_id>/_annotations.coco.json` 组织，图片放在标注同级目录或常见子目录中。当前主线是 COCO bbox -> SAM mask -> LISA ReasonSeg jpg/json -> LoRA 微调/评估。
+
+来源标记：
+
+- `[本项目新增]`：围绕施工安全数据、COCO 转 LISA、评估分析新增的脚本。
+- `[论文原有]`：LISA 论文作者原仓库已有脚本/模块，本项目继承使用。
+- `[论文原有/本项目改造]`：原仓库已有文件，但本项目历史中做过训练或路径兼容适配。
+
+## 主线脚本
+
+- `[本项目新增]` `data_pipeline/organize_coco_by_category.py`：可选的 COCO 原始数据预检查脚本，按类别整理图片链接/拷贝并输出 `manifest.csv`、`summary.json`，用于了解类别分布和缺图情况。
+- `[本项目新增]` `data_pipeline/build_phase1_feasibility_subset.py`：从一个或多个 COCO 数据集均衡抽取 train/val 子集，默认读 `data/002`、`data/004`，输出 `data/phase1_feasibility/{train,val}/_annotations.coco.json`、`manifest.csv`、`summary.json`。
+- `[本项目新增]` `data_pipeline/visualize_coco_bboxes.py`：可视化 COCO bbox，既可看原始 COCO，也可看 `data/phase1_feasibility`，用于人工抽检框和类别是否合理。
+- `[本项目新增]` `data_pipeline/build_lisa_from_coco.py`：COCO 到 LISA 的主转换脚本，读取 phase1 COCO 子集，调用 SAM 把 bbox 转成 mask，再转 LabelMe 多边形，直接写入 `dataset/reason_seg/ReasonSeg/{train,val}/<name>.jpg/.json`，并生成 `phase1_manifest.csv`、`phase1_build_summary.json`。
+- `[本项目新增]` `data_pipeline/visualize_lisa_annotations.py`：可视化生成后的 LISA jpg/json，并可同时对照 COCO 全部类别框和当前目标类别框，用于确认训练实际读取的 mask。
+- `[本项目新增]` `data_pipeline/rephrase_reason_seg_instructions.py`：使用 OpenAI API 为 `ReasonSegRelabel|train` 的标准 prompt 生成严格等价改写；默认先生成可审计 JSONL manifest，人工确认后再用 `--apply` 写回标注。不加载 GPU 模型，不得将 `OPENAI_API_KEY` 写入仓库。
+- `[论文原有/本项目改造]` `train_ds.py`：远程执行 LoRA 微调；当前施工场景默认使用 `--dataset "reason_seg"`、`--reason_seg_data "ReasonSeg|train"`、`--explanatory -1`。
+- `[本项目新增]` `benchmark_reason_seg.py`：远程执行 ReasonSeg 评估，示例 `python benchmark_reason_seg.py --version ./runs/<name>/merged_hf --vision-tower ... --dataset_dir ./dataset --val_dataset ReasonSeg|val --vision_pretrained ... --output_dir ./exp/runs/<name>/outputs`；输出 `summary.json`、`summary.md`、`per_sample_metrics.*`、预测 mask 和可视化结果。
+
+## 评估后派生脚本
+
+- `[本项目新增]` `data_pipeline/build_clean_subset_from_benchmark.py`：根据 `benchmark_reason_seg.py` 的 per-sample IoU 结果筛选 clean 子集，默认阈值 `--threshold 0.30`，默认输出 `dataset/reason_seg/ReasonSegClean030`。该脚本复制原始 `ReasonSeg` 的 jpg/json，不使用模型预测 mask 作为标签。
+- `[本项目新增]` `exp/compare_benchmark_metrics.py`：对比 base 与 LoRA 后的 benchmark 指标，生成指标差异和 bad case 分析。
+- `[本项目新增]` `exp/build_annotation_prediction_report.py`：基于标注、base 预测、LoRA 预测生成对照报告，用于定位标注问题、预测退化和真实提升样本。
+- `[论文原有]` `merge_lora_weights_and_save_hf_model.py`：远程执行，示例 `python merge_lora_weights_and_save_hf_model.py --version ./LISA13B --vision-tower ... --vision_pretrained ... --weight ./runs/<name>/pytorch_model.bin --save_path ./runs/<name>/merged_hf`；把 LoRA 权重合并成可直接推理的 Hugging Face 目录。
+
+## 支撑模块
+
+- `[本项目新增]` `data_pipeline/config.py`：pipeline 配置，包含路径、SAM checkpoint、隐患分类体系和 mask 质检阈值；COCO 主转换会复用其中的 SAM 与 QC 配置。
+- `[本项目新增]` `data_pipeline/box_to_mask.py`：SAM box prompt 封装，提供 bbox -> mask 和 box/mask IoU 质检函数；正式运行需要远程 GPU 和 SAM 权重。
+- `[本项目新增]` `data_pipeline/instruction_bank.py`：旧检测框流程的指令模板库；COCO 主转换脚本目前内置 `INSTRUCTION_BANK`。
+- `[论文原有]` `utils/data_processing.py`：LISA json -> mask 的统一读取逻辑，训练、评估和可视化必须与这里保持一致。
+- `[论文原有]` `utils/reason_seg_dataset.py`：训练时读取 `dataset/reason_seg/<dataset>/<split>/*.jpg` 并匹配同名 `.json` 的数据集实现。
+
+## 旧流程/替代入口
+
+- `[本项目新增]` `data_pipeline/grounded_ingest.py`：无 COCO 标注时的替代入口，原始图/视频 -> 开放词表检测/规则推导 -> 检测框原料。
+- `[本项目新增]` `data_pipeline/build_dataset.py`：旧的通用检测框 txt -> LISA `data_pipeline/out/` 主编排脚本，输入为 `data_pipeline/raw/*.jpg + .txt`，不是当前 COCO 主线。
+- `[本项目新增]` `data_pipeline/quality_check.py`：旧流程 `data_pipeline/out/` 的 mask 叠加质检可视化。
+- `[本项目新增]` `data_pipeline/deploy_to_dataset.py`：旧流程把 `data_pipeline/out/` 按 `split.json` 分发到 `dataset/reason_seg/ReasonSeg/{train,val}`；COCO 主线的 `build_lisa_from_coco.py` 已直接写入训练目录，通常不需要再执行它。
+
+## 推荐远程训练命令
+
+以下命令仅用于远程 Linux + GPU 服务器执行：
+
+```bash
+python train_ds.py \
+  --dataset_dir ./dataset \
+  --dataset "reason_seg" \
+  --reason_seg_data "ReasonSeg|train" \
+  --explanatory -1 \
+  --exp_name lisa-construction
+```
+
+## Clean030 LoRA 实验脚本
+
+当前 Clean030 LoRA 实验目录：
+
+```text
+exp/runs/lisa13b-clean030-lora-v1/
+```
+
+完整训练、LoRA 合并和 clean/full 两套评估，远程执行：
+
+```bash
+bash exp/runs/lisa13b-clean030-lora-v1/command.sh
+```
+
+只重新生成 clean/full 两套评估输出，不重新训练、不重新合并，远程执行：
+
+```bash
+bash exp/runs/lisa13b-clean030-lora-v1/eval_outputs.sh
+```
+
+`eval_outputs.sh` 的前提是已存在合并后的模型：
+
+```text
+runs/lisa13b-clean030-lora-v1/merged_hf/
+```
+
+如果 `dataset/reason_seg/ReasonSegClean030/` 不存在，该脚本会根据以下 base benchmark 结果自动重建 Clean030 子集：
+
+```text
+exp/runs/lisa13b-local-train/outputs/per_sample_metrics.jsonl
+exp/runs/lisa13b-local-val/outputs/per_sample_metrics.jsonl
+```
+
+Clean030 评估输出目录：
+
+```text
+exp/runs/lisa13b-clean030-lora-v1/clean-eval-outputs/
+```
+
+完整 val 评估输出目录：
+
+```text
+exp/runs/lisa13b-clean030-lora-v1/full-eval-outputs/
+```
+
+这两个输出目录中的图片已在 `.gitignore` 中忽略；JSON、CSV、JSONL、Markdown 和 shell 文件可正常追踪。`eval_outputs.sh` 会把 tuned `visualizations/*.md` 更新为五图对比页，包含 COCO 全部源标注、COCO 目标类别标注、LISA 标注、Base benchmark 预测和 tuned 预测。同时它会在实验 `EXPERIMENT.md` 末尾更新 clean/full 两张逐样本对比表，按 IoU 变化从好到坏排序，每行通过单个 `Comparison` 链接跳转到五图页面。
+
+## 实验分析脚本
+
+这些脚本都在仓库根目录下执行，默认读取 `exp/runs/.../outputs` 或当前 Clean030 扁平输出目录。
+
+| 脚本 | 执行方式 | 作用 |
+|---|---|---|
+| `exp/compare_benchmark_metrics.py` | `python exp/compare_benchmark_metrics.py --output <report.md>` | 对比两份 benchmark `per_sample_metrics.jsonl`，输出所有样本按 IoU 变化从好到坏的 Base/LoRA 指标及 visualization 链接；也可用 `--append-to` 把受控区块更新到现有 Markdown。默认比较 `lisa13b-local-val` 与 `lisa13b-clean030-lora-v1/full-eval-outputs`。 |
+| `exp/build_annotation_prediction_report.py` | `python exp/build_annotation_prediction_report.py --update-tuned-pages` | 生成 COCO 源标注、COCO 目标标注、LISA 标注、base 预测和 tuned 预测五图对照页；不加 `--update-tuned-pages` 时保持生成独立汇总报告的原有行为。默认读取 `lisa13b-local-val` 与 `lisa13b-clean030-lora-v1/full-eval-outputs`。 |
+
+两者都支持 `--output` 或 `--output-dir` 之类参数把结果写到 `exp/comparisons/` 下，适合远程执行后再回看 Markdown 报告。
