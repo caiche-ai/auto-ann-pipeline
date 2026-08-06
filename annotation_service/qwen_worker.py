@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from .qwen_contract import QwenContractError, QwenVisualContext
+from .qwen_contract import (
+    QwenContractError,
+    QwenJointTarget,
+    QwenJointVisualContext,
+    QwenVisualContext,
+)
 from .qwen_provider import (
     Qwen25VLProvider,
     QwenGenerationResult,
@@ -151,7 +156,7 @@ class QwenWorkerSettings:
             heartbeat_seconds=heartbeat_seconds,
             poll_seconds=_floating(
                 "ANNOTATION_QWEN_POLL_SECONDS",
-                2.0,
+                0.2,
                 minimum=0.1,
                 maximum=60,
             ),
@@ -174,6 +179,14 @@ class PromptProvider(Protocol):
         self,
         *,
         context: QwenVisualContext,
+        images: list[Any],
+    ) -> QwenGenerationResult:
+        ...
+
+    def generate_joint(
+        self,
+        *,
+        context: QwenJointVisualContext,
         images: list[Any],
     ) -> QwenGenerationResult:
         ...
@@ -278,6 +291,44 @@ def _visual_context(task: dict[str, Any]) -> QwenVisualContext:
     )
 
 
+def _joint_visual_context(
+    tasks: list[dict[str, Any]],
+) -> QwenJointVisualContext:
+    return QwenJointVisualContext(
+        asset_id=tasks[0]["asset"]["asset_id"],
+        targets=[
+            QwenJointTarget(
+                task_id=task["task_id"],
+                task_version=task["version"],
+                category=task["category"],
+                candidate_target_object=task["annotation"][
+                    "target_object"
+                ],
+                candidate_detection_entity=next(
+                    (
+                        detection["entity"]
+                        for detection in task.get("detections", [])
+                        if detection["detection_id"]
+                        == task.get("source_detection_id")
+                    ),
+                    None,
+                ),
+                target_box_xyxy=_target_box(task),
+                target_detection_ids=(
+                    (task.get("source_hazard") or {}).get(
+                        "target_detection_ids",
+                        [],
+                    )
+                ),
+            )
+            for task in tasks
+        ],
+        requires_visual_verification=True,
+        all_masks_available=True,
+        all_crops_available=True,
+    )
+
+
 class QwenPromptWorker:
     def __init__(
         self,
@@ -287,7 +338,7 @@ class QwenPromptWorker:
         worker_id: str,
         lease_seconds: int = 300,
         heartbeat_seconds: int = 60,
-        poll_seconds: float = 2.0,
+        poll_seconds: float = 0.2,
     ):
         if heartbeat_seconds >= lease_seconds:
             raise ValueError(
@@ -302,10 +353,16 @@ class QwenPromptWorker:
 
     def run_once(self) -> bool:
         operation = self.store.claim_next_operation(
-            operation_type="prompt_enrichment",
+            operation_type="joint_prompt_enrichment",
             worker_id=self.worker_id,
             lease_seconds=self.lease_seconds,
         )
+        if operation is None:
+            operation = self.store.claim_next_operation(
+                operation_type="prompt_enrichment",
+                worker_id=self.worker_id,
+                lease_seconds=self.lease_seconds,
+            )
         if operation is None:
             return False
         self._process(operation)
@@ -336,54 +393,134 @@ class QwenPromptWorker:
         )
         heartbeat.start()
         try:
-            task = self.store.get_task(operation["task_id"])
-            if task["version"] != operation["task_version"]:
-                raise ValueError(
-                    "task version changed after prompt operation was queued"
+            if operation["operation_type"] == "joint_prompt_enrichment":
+                group = self.store.get_task_group(
+                    operation["task_group_id"]
                 )
-            asset_path, asset_media_type = self.store.asset_file(
-                task["asset"]["asset_id"]
-            )
-            try:
-                mask_path, mask_media_type = self.store.artifact_file(
-                    task["task_id"],
-                    "mask-overlay",
+                tasks = [
+                    self.store.get_task(item["task_id"])
+                    for item in group["items"]
+                ]
+                for task, item in zip(tasks, group["items"]):
+                    if task["version"] != item["task_version"]:
+                        raise ValueError(
+                            "task version changed after joint prompt "
+                            "operation was queued"
+                        )
+                asset_path, asset_media_type = self.store.asset_file(
+                    group["asset_id"]
                 )
-                mask_label = "SAM mask叠加图"
-            except Exception:
-                mask_path, mask_media_type = self.store.artifact_file(
-                    task["task_id"],
-                    "mask",
-                )
-                mask_label = "SAM二值mask"
-            images = [
-                image_file_to_input(
-                    asset_path,
-                    media_type=asset_media_type,
-                    label="原图",
-                ),
-                image_file_to_input(
-                    mask_path,
-                    media_type=mask_media_type,
-                    label=mask_label,
-                ),
-            ]
-            if task.get("artifacts", {}).get("crop_url"):
-                crop_path, crop_media_type = self.store.artifact_file(
-                    task["task_id"],
-                    "crop",
-                )
-                images.append(
+                images = [
                     image_file_to_input(
-                        crop_path,
-                        media_type=crop_media_type,
-                        label="目标局部裁剪图",
+                        asset_path,
+                        media_type=asset_media_type,
+                        label="共同原图",
                     )
+                ]
+                for index, task in enumerate(tasks, start=1):
+                    try:
+                        mask_path, mask_media_type = (
+                            self.store.artifact_file(
+                                task["task_id"],
+                                "mask-overlay",
+                            )
+                        )
+                        mask_label = "mask叠加图"
+                    except Exception:
+                        mask_path, mask_media_type = (
+                            self.store.artifact_file(
+                                task["task_id"],
+                                "mask",
+                            )
+                        )
+                        mask_label = "二值mask"
+                    crop_path, crop_media_type = self.store.artifact_file(
+                        task["task_id"],
+                        "crop",
+                    )
+                    images.extend(
+                        [
+                            image_file_to_input(
+                                mask_path,
+                                media_type=mask_media_type,
+                                label=(
+                                    f"目标{index} Task "
+                                    f"{task['task_id']} 候选对象"
+                                    f"{task['annotation']['target_object']} "
+                                    f"{mask_label}"
+                                ),
+                            ),
+                            image_file_to_input(
+                                crop_path,
+                                media_type=crop_media_type,
+                                label=(
+                                    f"目标{index} Task "
+                                    f"{task['task_id']} 候选对象"
+                                    f"{task['annotation']['target_object']} "
+                                    "裁剪图"
+                                ),
+                            ),
+                        ]
+                    )
+                generation = self.provider.generate_joint(
+                    context=_joint_visual_context(tasks),
+                    images=images,
                 )
-            result = self.provider.generate(
-                context=_visual_context(task),
-                images=images,
-            )
+                result = {
+                    "task_group_id": group["task_group_id"],
+                    "source_task_ids": group["source_task_ids"],
+                    **generation.as_dict(),
+                }
+            else:
+                task = self.store.get_task(operation["task_id"])
+                if task["version"] != operation["task_version"]:
+                    raise ValueError(
+                        "task version changed after prompt operation was "
+                        "queued"
+                    )
+                asset_path, asset_media_type = self.store.asset_file(
+                    task["asset"]["asset_id"]
+                )
+                try:
+                    mask_path, mask_media_type = self.store.artifact_file(
+                        task["task_id"],
+                        "mask-overlay",
+                    )
+                    mask_label = "SAM mask叠加图"
+                except Exception:
+                    mask_path, mask_media_type = self.store.artifact_file(
+                        task["task_id"],
+                        "mask",
+                    )
+                    mask_label = "SAM二值mask"
+                images = [
+                    image_file_to_input(
+                        asset_path,
+                        media_type=asset_media_type,
+                        label="原图",
+                    ),
+                    image_file_to_input(
+                        mask_path,
+                        media_type=mask_media_type,
+                        label=mask_label,
+                    ),
+                ]
+                if task.get("artifacts", {}).get("crop_url"):
+                    crop_path, crop_media_type = self.store.artifact_file(
+                        task["task_id"],
+                        "crop",
+                    )
+                    images.append(
+                        image_file_to_input(
+                            crop_path,
+                            media_type=crop_media_type,
+                            label="目标局部裁剪图",
+                        )
+                    )
+                result = self.provider.generate(
+                    context=_visual_context(task),
+                    images=images,
+                ).as_dict()
             heartbeat.ensure_healthy()
             if self.store.get_operation(operation_id)["status"] != "running":
                 raise ValueError(
@@ -392,7 +529,7 @@ class QwenPromptWorker:
             self.store.complete_operation(
                 operation_id,
                 worker_id=self.worker_id,
-                result=result.as_dict(),
+                result=result,
             )
         except Exception as exc:
             LOGGER.exception(

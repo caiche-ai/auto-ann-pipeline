@@ -26,6 +26,8 @@ from .routes.assets import build_assets_router
 from .routes.jobs import build_jobs_router
 from .routes.operations import build_operations_router
 from .routes.releases import build_releases_router
+from .routes.task_batches import build_task_batches_router
+from .routes.task_groups import build_task_groups_router
 from .routes.tasks import build_tasks_router
 from .storage import AnnotationStore, StorageBackend
 
@@ -223,7 +225,7 @@ def create_app(
         operation_id="getHealth",
     )
     async def health() -> HealthResponse:
-        return HealthResponse()
+        return HealthResponse(version=settings.service_version)
 
     @app.get(
         "/ready",
@@ -266,6 +268,18 @@ def create_app(
     )
     app.include_router(
         build_tasks_router(
+            storage=cast(AnnotationStore | None, storage),
+            authenticate=authenticate,
+        )
+    )
+    app.include_router(
+        build_task_batches_router(
+            storage=cast(AnnotationStore | None, storage),
+            authenticate=authenticate,
+        )
+    )
+    app.include_router(
+        build_task_groups_router(
             storage=cast(AnnotationStore | None, storage),
             authenticate=authenticate,
         )

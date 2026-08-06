@@ -34,7 +34,10 @@ class AnnotationAppTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok"})
+        self.assertEqual(
+            response.json(),
+            {"status": "ok", "version": "test-v1"},
+        )
         self.assertEqual(
             response.headers["x-request-id"],
             "frontend-request",
@@ -158,9 +161,25 @@ class AnnotationAppTest(unittest.TestCase):
                 "post",
             ): "createMaskCandidate",
             (
+                "/v1/annotation/task-batches/mask-candidates",
+                "post",
+            ): "createBatchMaskCandidates",
+            (
                 "/v1/annotation/tasks/{task_id}/prompt-enrichments",
                 "post",
             ): "createPromptEnrichment",
+            (
+                "/v1/annotation/task-batches/prompt-enrichments",
+                "post",
+            ): "createBatchPromptEnrichments",
+            (
+                "/v1/annotation/task-groups/prompt-enrichments",
+                "post",
+            ): "createJointPromptEnrichment",
+            (
+                "/v1/annotation/task-groups/{task_group_id}",
+                "get",
+            ): "getAnnotationTaskGroup",
             (
                 "/v1/annotation/tasks/{task_id}/submit",
                 "post",
@@ -194,6 +213,10 @@ class AnnotationAppTest(unittest.TestCase):
             [{"apiKeyAuth": []}, {"bearerAuth": []}],
         )
         self.assertIn("/v1/annotation/tasks", document["paths"])
+        self.assertIn(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            document["paths"],
+        )
         self.assertIn("/v1/annotation/releases", document["paths"])
 
     def test_storage_lifecycle_is_reflected_in_readiness(self):

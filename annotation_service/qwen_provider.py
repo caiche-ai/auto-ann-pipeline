@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import socket
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -13,12 +14,19 @@ from urllib.request import Request, urlopen
 from .qwen_contract import (
     QWEN_ENRICHMENT_PROMPT_VERSION,
     QWEN_FACTS_PROMPT_VERSION,
+    QWEN_JOINT_ENRICHMENT_PROMPT_VERSION,
+    QWEN_JOINT_FACTS_PROMPT_VERSION,
     QwenImageInput,
+    QwenJointVisualFacts,
+    QwenJointVisualContext,
     QwenPromptSet,
     QwenVisualContext,
     QwenVisualFacts,
     build_prompt_enrichment_messages,
+    build_joint_visual_facts_messages,
     build_visual_facts_messages,
+    ground_joint_prompt_set,
+    parse_joint_visual_facts,
     parse_prompt_set,
     parse_visual_facts,
 )
@@ -72,12 +80,13 @@ class QwenProviderConfig:
 
 @dataclass(frozen=True)
 class QwenGenerationResult:
-    facts: QwenVisualFacts
+    facts: QwenVisualFacts | QwenJointVisualFacts
     prompt_set: QwenPromptSet
     provider: str
     model: str
     facts_prompt_version: str
     enrichment_prompt_version: str
+    timings_ms: dict[str, float | int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         model_dump = getattr(self.facts, "model_dump", None)
@@ -103,6 +112,7 @@ class QwenGenerationResult:
                     self.enrichment_prompt_version
                 ),
             },
+            "timings_ms": self.timings_ms,
         }
 
 
@@ -214,6 +224,8 @@ class Qwen25VLProvider:
             raise ValueError(
                 "Qwen2.5-VL generation requires at least one image"
             )
+        total_started = time.perf_counter()
+        facts_started = time.perf_counter()
         raw_facts = self._complete(
             messages=build_visual_facts_messages(
                 context,
@@ -221,7 +233,9 @@ class Qwen25VLProvider:
             ),
             temperature=self.config.facts_temperature,
         )
+        facts_ms = (time.perf_counter() - facts_started) * 1000
         facts = parse_visual_facts(raw_facts)
+        prompts_started = time.perf_counter()
         raw_prompts = self._complete(
             messages=build_prompt_enrichment_messages(
                 category=context.category,
@@ -229,6 +243,7 @@ class Qwen25VLProvider:
             ),
             temperature=self.config.prompts_temperature,
         )
+        prompts_ms = (time.perf_counter() - prompts_started) * 1000
         prompt_set = parse_prompt_set(raw_prompts)
         return QwenGenerationResult(
             facts=facts,
@@ -237,4 +252,62 @@ class Qwen25VLProvider:
             model=self.config.model,
             facts_prompt_version=QWEN_FACTS_PROMPT_VERSION,
             enrichment_prompt_version=QWEN_ENRICHMENT_PROMPT_VERSION,
+            timings_ms={
+                "model_calls": 2,
+                "facts_call_ms": round(facts_ms, 3),
+                "prompts_call_ms": round(prompts_ms, 3),
+                "total_ms": round(
+                    (time.perf_counter() - total_started) * 1000,
+                    3,
+                ),
+            },
+        )
+
+    def generate_joint(
+        self,
+        *,
+        context: QwenJointVisualContext,
+        images: list[QwenImageInput],
+    ) -> QwenGenerationResult:
+        if not images:
+            raise ValueError(
+                "joint Qwen2.5-VL generation requires images"
+            )
+        total_started = time.perf_counter()
+        facts_started = time.perf_counter()
+        raw_facts = self._complete(
+            messages=build_joint_visual_facts_messages(
+                context,
+                images=images,
+            ),
+            temperature=self.config.facts_temperature,
+        )
+        facts_ms = (time.perf_counter() - facts_started) * 1000
+        expected_task_ids = [
+            target.task_id for target in context.targets
+        ]
+        facts = parse_joint_visual_facts(
+            raw_facts,
+            expected_task_ids=expected_task_ids,
+        )
+        prompt_set = ground_joint_prompt_set(
+            facts=facts,
+        )
+        return QwenGenerationResult(
+            facts=facts,
+            prompt_set=prompt_set,
+            provider="vllm-openai-compatible",
+            model=self.config.model,
+            facts_prompt_version=QWEN_JOINT_FACTS_PROMPT_VERSION,
+            enrichment_prompt_version=(
+                QWEN_JOINT_ENRICHMENT_PROMPT_VERSION
+            ),
+            timings_ms={
+                "model_calls": 1,
+                "facts_call_ms": round(facts_ms, 3),
+                "total_ms": round(
+                    (time.perf_counter() - total_started) * 1000,
+                    3,
+                ),
+            },
         )

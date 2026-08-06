@@ -314,6 +314,319 @@ class TaskApiTest(unittest.TestCase):
         )
         self.assertEqual(outside.status_code, 422)
 
+    def test_batch_mask_and_prompt_operations_keep_tasks_separate(self):
+        second = self.store.create_task(
+            job_id=self.job_id,
+            asset_id=self.asset_id,
+            category="helmet_missing",
+            annotation=complete_annotation("另一名作业人员"),
+            provenance={"pipeline_version": "grounded-qwen-v1"},
+        )
+        batch = self.client.post(
+            "/v1/annotation/task-batches/mask-candidates",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                        "box_xyxy": [1, 1, 5, 9],
+                    },
+                    {
+                        "task_id": second["task_id"],
+                        "expected_version": 1,
+                        "box_xyxy": [5, 1, 9, 9],
+                    },
+                ]
+            },
+        )
+        self.assertEqual(batch.status_code, 202, batch.text)
+        payload = batch.json()
+        self.assertEqual(payload["accepted_count"], 2)
+        self.assertEqual(payload["rejected_count"], 0)
+        self.assertEqual(
+            {item["task_id"] for item in payload["items"]},
+            {self.task["task_id"], second["task_id"]},
+        )
+        self.assertEqual(
+            len(
+                {
+                    item["operation_id"]
+                    for item in payload["items"]
+                }
+            ),
+            2,
+        )
+
+        partial = self.client.post(
+            "/v1/annotation/task-batches/mask-candidates",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                        "box_xyxy": [1, 1, 5, 9],
+                    },
+                    {
+                        "task_id": "tsk_missing",
+                        "expected_version": 1,
+                        "box_xyxy": [1, 1, 5, 9],
+                    },
+                ]
+            },
+        )
+        self.assertEqual(partial.status_code, 202, partial.text)
+        self.assertEqual(partial.json()["accepted_count"], 1)
+        self.assertEqual(partial.json()["rejected_count"], 1)
+        self.assertEqual(
+            partial.json()["items"][1]["error"]["code"],
+            "not_found",
+        )
+
+        self.store.store_artifact(
+            task_id=self.task["task_id"],
+            artifact_type="mask",
+            data=png_bytes(),
+            media_type="image/png",
+        )
+        prompts = self.client.post(
+            "/v1/annotation/task-batches/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    },
+                    {
+                        "task_id": second["task_id"],
+                        "expected_version": 1,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(prompts.status_code, 202, prompts.text)
+        self.assertEqual(prompts.json()["accepted_count"], 1)
+        self.assertEqual(prompts.json()["rejected_count"], 1)
+        self.assertEqual(
+            prompts.json()["items"][1]["error"]["code"],
+            "validation_error",
+        )
+
+        duplicated = self.client.post(
+            "/v1/annotation/task-batches/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    },
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(duplicated.status_code, 422)
+
+    def test_joint_prompt_enrichment_creates_task_group(self):
+        second = self.store.create_task(
+            job_id=self.job_id,
+            asset_id=self.asset_id,
+            category="equipment_proximity",
+            annotation=complete_annotation("画面右侧的一台施工设备"),
+            provenance={"pipeline_version": "grounded-qwen-v1"},
+        )
+        for task_id in (self.task["task_id"], second["task_id"]):
+            self.store.store_artifact(
+                task_id=task_id,
+                artifact_type="mask-overlay",
+                data=png_bytes(),
+                media_type="image/png",
+            )
+            self.store.store_artifact(
+                task_id=task_id,
+                artifact_type="crop",
+                data=png_bytes(),
+                media_type="image/png",
+            )
+        request = {
+            "items": [
+                {
+                    "task_id": self.task["task_id"],
+                    "expected_version": 1,
+                },
+                {
+                    "task_id": second["task_id"],
+                    "expected_version": 1,
+                },
+            ],
+            "mode": "joint",
+        }
+
+        accepted = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json=request,
+        )
+
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+        payload = accepted.json()
+        self.assertTrue(payload["task_group_id"].startswith("tgp_"))
+        operation = self.client.get(
+            f"/v1/annotation/operations/{payload['operation_id']}"
+        )
+        self.assertEqual(operation.status_code, 200, operation.text)
+        self.assertEqual(
+            operation.json()["operation_type"],
+            "joint_prompt_enrichment",
+        )
+        self.assertIsNone(operation.json()["task_id"])
+        self.assertIsNone(operation.json()["task_version"])
+        self.assertEqual(
+            operation.json()["task_group_id"],
+            payload["task_group_id"],
+        )
+        group = self.client.get(
+            f"/v1/annotation/task-groups/{payload['task_group_id']}"
+        )
+        self.assertEqual(group.status_code, 200, group.text)
+        self.assertEqual(group.json()["status"], "queued")
+        self.assertEqual(
+            group.json()["source_task_ids"],
+            [self.task["task_id"], second["task_id"]],
+        )
+        self.assertEqual(group.json()["prompts"], [])
+        self.assertIsNone(group.json()["facts"])
+
+        duplicate = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json=request,
+        )
+        self.assertEqual(duplicate.status_code, 202, duplicate.text)
+        self.assertEqual(
+            duplicate.json()["task_group_id"],
+            payload["task_group_id"],
+        )
+        self.assertEqual(
+            duplicate.json()["operation_id"],
+            payload["operation_id"],
+        )
+
+    def test_joint_prompt_enrichment_validates_members(self):
+        second = self.store.create_task(
+            job_id=self.job_id,
+            asset_id=self.asset_id,
+            category="equipment_proximity",
+            annotation=complete_annotation("画面右侧的一台施工设备"),
+            provenance={"pipeline_version": "grounded-qwen-v1"},
+        )
+        for task_id in (self.task["task_id"], second["task_id"]):
+            self.store.store_artifact(
+                task_id=task_id,
+                artifact_type="mask",
+                data=png_bytes(),
+                media_type="image/png",
+            )
+        missing_crop = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    },
+                    {
+                        "task_id": second["task_id"],
+                        "expected_version": 1,
+                    },
+                ],
+                "mode": "joint",
+            },
+        )
+        self.assertEqual(missing_crop.status_code, 422)
+
+        for task_id in (self.task["task_id"], second["task_id"]):
+            self.store.store_artifact(
+                task_id=task_id,
+                artifact_type="crop",
+                data=png_bytes(),
+                media_type="image/png",
+            )
+        stale = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 2,
+                    },
+                    {
+                        "task_id": second["task_id"],
+                        "expected_version": 1,
+                    },
+                ],
+                "mode": "joint",
+            },
+        )
+        self.assertEqual(stale.status_code, 409)
+
+        other_asset = self.store.create_asset(
+            image_bytes=png_bytes(),
+            media_type="image/png",
+            width=10,
+            height=10,
+            group_id="site02:video01",
+        )
+        other_job = self.store.create_job(
+            asset_ids=[other_asset["asset_id"]],
+            requested_categories=["unsafe"],
+            pipeline_version="grounded-qwen-v1",
+        )
+        other_task = self.store.create_task(
+            job_id=other_job["job_id"],
+            asset_id=other_asset["asset_id"],
+            category="unsafe",
+            annotation=complete_annotation("另一张图片中的目标"),
+            provenance={"pipeline_version": "grounded-qwen-v1"},
+        )
+        for artifact_type in ("mask", "crop"):
+            self.store.store_artifact(
+                task_id=other_task["task_id"],
+                artifact_type=artifact_type,
+                data=png_bytes(),
+                media_type="image/png",
+            )
+        different_images = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    },
+                    {
+                        "task_id": other_task["task_id"],
+                        "expected_version": 1,
+                    },
+                ],
+                "mode": "joint",
+            },
+        )
+        self.assertEqual(different_images.status_code, 422)
+
+        single_task = self.client.post(
+            "/v1/annotation/task-groups/prompt-enrichments",
+            json={
+                "items": [
+                    {
+                        "task_id": self.task["task_id"],
+                        "expected_version": 1,
+                    }
+                ],
+                "mode": "joint",
+            },
+        )
+        self.assertEqual(single_task.status_code, 422)
+
     def test_queued_operation_can_be_cancelled(self):
         accepted = self.client.post(
             (

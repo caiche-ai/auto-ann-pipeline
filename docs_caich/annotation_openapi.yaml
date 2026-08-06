@@ -3,7 +3,7 @@
   "info": {
     "title": "Construction Safety Annotation API",
     "description": "Free-form GroundingDINO detection, SAM box-prompt segmentation, Qwen prompt enrichment, manual annotation review, and dataset release API. The API process does not load model weights.",
-    "version": "1.1.0"
+    "version": "1.5.1"
   },
   "paths": {
     "/health": {
@@ -898,6 +898,144 @@
           },
           "422": {
             "description": "Detection selection is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/annotation/task-batches/mask-candidates": {
+      "post": {
+        "tags": [
+          "Task Batches"
+        ],
+        "summary": "Create Batch Mask Candidates",
+        "operationId": "createBatchMaskCandidates",
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchMaskCandidatesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "One SAM operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationsAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Batch request structure is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/annotation/task-batches/prompt-enrichments": {
+      "post": {
+        "tags": [
+          "Task Batches"
+        ],
+        "summary": "Create Batch Prompt Enrichments",
+        "operationId": "createBatchPromptEnrichments",
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPromptEnrichmentsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "One Qwen operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationsAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Batch request structure is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2147,6 +2285,185 @@
         }
       }
     },
+    "/v1/annotation/task-groups/prompt-enrichments": {
+      "post": {
+        "tags": [
+          "Task Groups"
+        ],
+        "summary": "Create Joint Prompt Enrichment",
+        "operationId": "createJointPromptEnrichment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JointPromptEnrichmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "One Qwen operation is accepted for the complete Task Group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGroupOperationAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task or Task Group was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "At least one Task version changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Tasks are invalid, use different images, or lack mask/crop artifacts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/annotation/task-groups/{task_group_id}": {
+      "get": {
+        "tags": [
+          "Task Groups"
+        ],
+        "summary": "Get Annotation Task Group",
+        "operationId": "getAnnotationTaskGroup",
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGroup"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task or Task Group was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "At least one Task version changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Tasks are invalid, use different images, or lack mask/crop artifacts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/annotation/operations/{operation_id}": {
       "get": {
         "tags": [
@@ -2781,13 +3098,38 @@
             "$ref": "#/components/schemas/OperationType"
           },
           "task_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Task Id"
           },
           "task_version": {
-            "type": "integer",
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Task Version"
+          },
+          "task_group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Group Id"
           },
           "status": {
             "$ref": "#/components/schemas/OperationStatus"
@@ -2849,8 +3191,6 @@
         "required": [
           "operation_id",
           "operation_type",
-          "task_id",
-          "task_version",
           "status",
           "created_at"
         ],
@@ -3142,6 +3482,181 @@
         ],
         "title": "Asset"
       },
+      "BatchMaskCandidateItem": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Task Id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "box_xyxy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Box Xyxy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "expected_version",
+          "box_xyxy"
+        ],
+        "title": "BatchMaskCandidateItem"
+      },
+      "BatchMaskCandidatesRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchMaskCandidateItem"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchMaskCandidatesRequest"
+      },
+      "BatchOperationItemResult": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "BatchOperationItemResult"
+      },
+      "BatchOperationsAccepted": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchOperationItemResult"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted Count"
+          },
+          "rejected_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rejected Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accepted_count",
+          "rejected_count"
+        ],
+        "title": "BatchOperationsAccepted"
+      },
+      "BatchPromptEnrichmentItem": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Task Id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "expected_version"
+        ],
+        "title": "BatchPromptEnrichmentItem"
+      },
+      "BatchPromptEnrichmentsRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPromptEnrichmentItem"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchPromptEnrichmentsRequest"
+      },
       "BadCaseType": {
         "type": "string",
         "enum": [
@@ -3255,6 +3770,20 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Existing Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewTaskBuildItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "overlap_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DetectionOverlapWarning"
+            },
+            "type": "array",
+            "title": "Overlap Warnings"
           }
         },
         "additionalProperties": false,
@@ -3328,6 +3857,36 @@
             "maxLength": 2000,
             "minLength": 1,
             "title": "Grounding Prompt"
+          },
+          "grounding_prompt_normalization_mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "terminal_period",
+              "canonical_terms",
+              "llm_grounding_caption"
+            ],
+            "title": "Grounding Prompt Normalization Mode",
+            "default": "terminal_period"
+          },
+          "grounding_prompt_normalization_profile": {
+            "type": "string",
+            "enum": [
+              "construction_safety_v1",
+              "open_semantic_zh_en_v1"
+            ],
+            "title": "Grounding Prompt Normalization Profile",
+            "default": "construction_safety_v1"
+          },
+          "grounding_prompt_translation_failure_policy": {
+            "type": "string",
+            "enum": [
+              "fail_job",
+              "fallback_canonical_terms",
+              "fallback_terminal_period"
+            ],
+            "title": "Grounding Prompt Translation Failure Policy",
+            "default": "fallback_canonical_terms"
           },
           "pipeline_version": {
             "type": "string",
@@ -3445,6 +4004,37 @@
           "phrase_score"
         ],
         "title": "Detection"
+      },
+      "DetectionOverlapWarning": {
+        "properties": {
+          "detection_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Detection Ids"
+          },
+          "box_iou": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Box Iou"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detection_ids",
+          "box_iou",
+          "message"
+        ],
+        "title": "DetectionOverlapWarning"
       },
       "DetectionJobProgress": {
         "properties": {
@@ -3643,18 +4233,59 @@
         ],
         "title": "HazardCandidate"
       },
-      "HealthResponse": {
+      "GroundingPromptRoute": {
         "properties": {
-          "status": {
-            "type": "string",
-            "const": "ok",
-            "title": "Status",
-            "default": "ok"
+          "rule_attempted": {
+            "type": "boolean",
+            "title": "Rule Attempted"
+          },
+          "rule_matched": {
+            "type": "boolean",
+            "title": "Rule Matched"
+          },
+          "llm_attempted": {
+            "type": "boolean",
+            "title": "Llm Attempted"
+          },
+          "llm_succeeded": {
+            "type": "boolean",
+            "title": "Llm Succeeded"
+          },
+          "fallback_used": {
+            "type": "boolean",
+            "title": "Fallback Used"
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "HealthResponse"
+        "required": [
+          "rule_attempted",
+          "rule_matched",
+          "llm_attempted",
+          "llm_succeeded",
+          "fallback_used"
+        ],
+        "title": "GroundingPromptRoute"
+      },
+    "HealthResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "ok",
+          "title": "Status",
+          "default": "ok"
+        },
+        "version": {
+          "type": "string",
+          "title": "Version"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false,
+      "type": "object",
+      "title": "HealthResponse"
       },
       "InvalidateTaskRequest": {
         "properties": {
@@ -3713,6 +4344,46 @@
           "grounding_prompt": {
             "type": "string",
             "title": "Grounding Prompt"
+          },
+          "grounding_prompt_normalization_mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "terminal_period",
+              "canonical_terms",
+              "llm_grounding_caption"
+            ],
+            "title": "Grounding Prompt Normalization Mode",
+            "default": "terminal_period"
+          },
+          "grounding_prompt_normalization_profile": {
+            "type": "string",
+            "enum": [
+              "construction_safety_v1",
+              "open_semantic_zh_en_v1"
+            ],
+            "title": "Grounding Prompt Normalization Profile",
+            "default": "construction_safety_v1"
+          },
+          "grounding_prompt_translation_failure_policy": {
+            "type": "string",
+            "enum": [
+              "fail_job",
+              "fallback_canonical_terms",
+              "fallback_terminal_period"
+            ],
+            "title": "Grounding Prompt Translation Failure Policy",
+            "default": "fallback_canonical_terms"
+          },
+          "grounding_prompt_route": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroundingPromptRoute"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "progress": {
             "$ref": "#/components/schemas/DetectionJobProgress"
@@ -3915,6 +4586,210 @@
         ],
         "title": "JobStatus"
       },
+      "JointPromptEnrichmentRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPromptEnrichmentItem"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Items"
+          },
+          "mode": {
+            "type": "string",
+            "const": "joint",
+            "title": "Mode",
+            "default": "joint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "JointPromptEnrichmentRequest"
+      },
+      "TaskGroup": {
+        "properties": {
+          "task_group_id": {
+            "type": "string",
+            "title": "Task Group Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "mode": {
+            "type": "string",
+            "const": "joint",
+            "title": "Mode",
+            "default": "joint"
+          },
+          "source_task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Source Task Ids"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskGroupMember"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Items"
+          },
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facts"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationPrompt"
+            },
+            "type": "array",
+            "title": "Prompts"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_group_id",
+          "asset_id",
+          "source_task_ids",
+          "items",
+          "operation_id",
+          "status",
+          "created_at"
+        ],
+        "title": "TaskGroup"
+      },
+      "TaskGroupMember": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Task Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "task_version"
+        ],
+        "title": "TaskGroupMember"
+      },
+      "TaskGroupOperationAccepted": {
+        "properties": {
+          "task_group_id": {
+            "type": "string",
+            "title": "Task Group Id"
+          },
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running"
+            ],
+            "title": "Status",
+            "default": "queued"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_group_id",
+          "operation_id",
+          "created_at"
+        ],
+        "title": "TaskGroupOperationAccepted"
+      },
       "OperationAccepted": {
         "properties": {
           "operation_id": {
@@ -3959,7 +4834,8 @@
         "type": "string",
         "enum": [
           "mask_candidate",
-          "prompt_enrichment"
+          "prompt_enrichment",
+          "joint_prompt_enrichment"
         ],
         "title": "OperationType"
       },
@@ -4430,6 +5306,49 @@
           "created_at"
         ],
         "title": "ReviewRecord"
+      },
+      "ReviewTaskBuildItem": {
+        "properties": {
+          "detection_id": {
+            "type": "string",
+            "title": "Detection Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Task Version"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "box_xyxy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Box Xyxy"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detection_id",
+          "task_id",
+          "task_version",
+          "asset_id",
+          "box_xyxy",
+          "created"
+        ],
+        "title": "ReviewTaskBuildItem"
       },
       "ReviewTaskRequest": {
         "properties": {

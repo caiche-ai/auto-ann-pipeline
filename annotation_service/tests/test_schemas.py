@@ -31,6 +31,54 @@ class SchemaTest(unittest.TestCase):
             request.grounding_prompt,
             "任意中文 Prompt：设备旁的人员！",
         )
+        self.assertEqual(
+            request.grounding_prompt_normalization_mode,
+            "terminal_period",
+        )
+        self.assertEqual(
+            request.grounding_prompt_normalization_profile,
+            "construction_safety_v1",
+        )
+        self.assertEqual(
+            request.grounding_prompt_translation_failure_policy,
+            "fallback_canonical_terms",
+        )
+
+        custom = CreateJobRequest(
+            asset_ids=["a"],
+            grounding_prompt="person near excavator",
+            grounding_prompt_normalization_mode="off",
+            grounding_prompt_normalization_profile="construction_safety_v1",
+        )
+        self.assertEqual(
+            custom.grounding_prompt_normalization_mode,
+            "off",
+        )
+
+        open_semantic = CreateJobRequest(
+            asset_ids=["a"],
+            grounding_prompt="找出蓝色设备旁的施工人员",
+            grounding_prompt_normalization_mode="llm_grounding_caption",
+            grounding_prompt_normalization_profile=(
+                "open_semantic_zh_en_v1"
+            ),
+            grounding_prompt_translation_failure_policy="fail_job",
+        )
+        self.assertEqual(
+            open_semantic.grounding_prompt_normalization_mode,
+            "llm_grounding_caption",
+        )
+        with self.assertRaises(ValidationError):
+            CreateJobRequest(
+                asset_ids=["a"],
+                grounding_prompt="施工人员",
+                grounding_prompt_normalization_mode=(
+                    "llm_grounding_caption"
+                ),
+                grounding_prompt_normalization_profile=(
+                    "construction_safety_v1"
+                ),
+            )
 
         with self.assertRaises(ValidationError):
             CreateJobRequest(

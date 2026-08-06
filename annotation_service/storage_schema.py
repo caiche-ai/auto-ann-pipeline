@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -535,6 +535,131 @@ SCHEMA_V8 = (
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_operations_task
+    ON annotation_operations(task_id, created_at)
+    """,
+)
+
+
+SCHEMA_V9 = (
+    """
+    ALTER TABLE annotation_jobs
+    ADD COLUMN grounding_prompt_route_json TEXT
+    """,
+)
+
+
+SCHEMA_V10 = (
+    """
+    CREATE TABLE annotation_task_groups (
+        task_group_id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode = 'joint'),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (asset_id)
+            REFERENCES assets(asset_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE annotation_task_group_members (
+        task_group_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        task_version INTEGER NOT NULL CHECK (task_version >= 1),
+        ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+        PRIMARY KEY (task_group_id, task_id),
+        UNIQUE (task_group_id, ordinal),
+        FOREIGN KEY (task_group_id)
+            REFERENCES annotation_task_groups(task_group_id) ON DELETE CASCADE,
+        FOREIGN KEY (task_id)
+            REFERENCES annotation_tasks(task_id) ON DELETE RESTRICT
+    )
+    """,
+    """
+    CREATE INDEX idx_task_group_members_task
+    ON annotation_task_group_members(task_id, task_group_id)
+    """,
+    """
+    ALTER TABLE annotation_operations
+    RENAME TO annotation_operations_v9
+    """,
+    """
+    CREATE TABLE annotation_operations (
+        operation_id TEXT PRIMARY KEY,
+        operation_type TEXT NOT NULL CHECK (
+            operation_type IN (
+                'mask_candidate',
+                'prompt_enrichment',
+                'joint_prompt_enrichment'
+            )
+        ),
+        task_id TEXT,
+        task_version INTEGER CHECK (
+            task_version IS NULL OR task_version >= 1
+        ),
+        task_group_id TEXT UNIQUE,
+        status TEXT NOT NULL CHECK (
+            status IN (
+                'queued', 'running', 'succeeded', 'failed', 'cancelled'
+            )
+        ),
+        request_json TEXT NOT NULL DEFAULT '{}',
+        result_json TEXT,
+        error_json TEXT,
+        claimed_by TEXT,
+        lease_expires_at TEXT,
+        heartbeat_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0
+            CHECK (attempt_count >= 0),
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        CHECK (
+            (
+                operation_type = 'joint_prompt_enrichment'
+                AND task_group_id IS NOT NULL
+                AND task_id IS NULL
+                AND task_version IS NULL
+            )
+            OR
+            (
+                operation_type IN (
+                    'mask_candidate', 'prompt_enrichment'
+                )
+                AND task_group_id IS NULL
+                AND task_id IS NOT NULL
+                AND task_version IS NOT NULL
+            )
+        ),
+        FOREIGN KEY (task_id)
+            REFERENCES annotation_tasks(task_id) ON DELETE CASCADE,
+        FOREIGN KEY (task_group_id)
+            REFERENCES annotation_task_groups(task_group_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    INSERT INTO annotation_operations (
+        operation_id, operation_type, task_id, task_version,
+        task_group_id, status, request_json, result_json, error_json,
+        claimed_by, lease_expires_at, heartbeat_at, attempt_count,
+        created_at, started_at, completed_at
+    )
+    SELECT
+        operation_id, operation_type, task_id, task_version,
+        NULL, status, request_json, result_json, error_json,
+        claimed_by, lease_expires_at, heartbeat_at, attempt_count,
+        created_at, started_at, completed_at
+    FROM annotation_operations_v9
+    """,
+    """
+    DROP TABLE annotation_operations_v9
+    """,
+    """
+    CREATE INDEX idx_operations_claimable
+    ON annotation_operations(
+        operation_type, status, lease_expires_at, created_at
+    )
+    """,
+    """
+    CREATE INDEX idx_operations_task
     ON annotation_operations(task_id, created_at)
     """,
 )

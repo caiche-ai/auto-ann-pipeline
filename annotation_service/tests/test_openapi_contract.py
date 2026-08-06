@@ -55,7 +55,11 @@ class StaticOpenAPIContractTest(unittest.TestCase):
                 "invalidateAnnotationTask",
                 "reviewAnnotationTask",
                 "createMaskCandidate",
+                "createBatchMaskCandidates",
                 "createPromptEnrichment",
+                "createBatchPromptEnrichments",
+                "createJointPromptEnrichment",
+                "getAnnotationTaskGroup",
                 "getTaskArtifact",
                 "getAnnotationOperation",
                 "cancelAnnotationOperation",
@@ -65,6 +69,62 @@ class StaticOpenAPIContractTest(unittest.TestCase):
                 "getAnnotationReleaseArchive",
             },
         )
+        static_request = static["components"]["schemas"][
+            "CreateJobRequest"
+        ]["properties"]
+        runtime_request = runtime["components"]["schemas"][
+            "CreateJobRequest"
+        ]["properties"]
+        for field in (
+            "grounding_prompt_normalization_mode",
+            "grounding_prompt_normalization_profile",
+            "grounding_prompt_translation_failure_policy",
+        ):
+            self.assertEqual(
+                static_request[field]["enum"],
+                runtime_request[field]["enum"],
+            )
+            self.assertEqual(
+                static_request[field]["default"],
+                runtime_request[field]["default"],
+            )
+        for schema_name in ("GroundingPromptRoute", "Job"):
+            static_schema = static["components"]["schemas"][schema_name]
+            runtime_schema = runtime["components"]["schemas"][schema_name]
+            self.assertEqual(
+                set(static_schema.get("properties", {})),
+                set(runtime_schema.get("properties", {})),
+            )
+            self.assertEqual(
+                set(static_schema.get("required", [])),
+                set(runtime_schema.get("required", [])),
+            )
+        for schema_name in (
+            "BatchMaskCandidateItem",
+            "BatchMaskCandidatesRequest",
+            "BatchOperationItemResult",
+            "BatchOperationsAccepted",
+            "BatchPromptEnrichmentItem",
+            "BatchPromptEnrichmentsRequest",
+            "BuildReviewTasksResponse",
+            "DetectionOverlapWarning",
+            "JointPromptEnrichmentRequest",
+            "ReviewTaskBuildItem",
+            "TaskGroup",
+            "TaskGroupMember",
+            "TaskGroupOperationAccepted",
+            "AnnotationOperation",
+        ):
+            static_schema = static["components"]["schemas"][schema_name]
+            runtime_schema = runtime["components"]["schemas"][schema_name]
+            self.assertEqual(
+                set(static_schema.get("properties", {})),
+                set(runtime_schema.get("properties", {})),
+            )
+            self.assertEqual(
+                set(static_schema.get("required", [])),
+                set(runtime_schema.get("required", [])),
+            )
 
 
 if __name__ == "__main__":

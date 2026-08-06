@@ -9,6 +9,7 @@ from typing import Any
 
 from ..detection_overlay import render_detection_overlay
 from ..errors import VersionConflictError
+from ..prompt_normalization import PromptRouteFailure
 from ..schemas import JobStatus, PipelineStage
 from ..storage import AnnotationStore
 from .grounding_dino import DetectionPredictor
@@ -84,7 +85,7 @@ class GroundingDINOJobWorker:
         worker_id: str,
         lease_seconds: int = 300,
         heartbeat_seconds: int = 60,
-        poll_seconds: float = 2.0,
+        poll_seconds: float = 0.2,
     ):
         if heartbeat_seconds >= lease_seconds:
             raise ValueError(
@@ -193,6 +194,7 @@ class GroundingDINOJobWorker:
         asset_id: str,
     ) -> dict[str, Any] | None:
         job_id = job["job_id"]
+        asset_started = time.perf_counter()
         self.store.update_job_asset(
             job_id=job_id,
             asset_id=asset_id,
@@ -202,24 +204,106 @@ class GroundingDINOJobWorker:
         try:
             asset = self.store.get_asset(asset_id)
             image_path, _ = self.store.asset_file(asset_id)
-            detections = self.predictor.predict(
-                image_path=Path(image_path),
-                width=int(asset["width"]),
-                height=int(asset["height"]),
-                prompt=job["grounding_prompt"],
+            options = job.get("options", {})
+            prediction_arguments = {
+                "image_path": Path(image_path),
+                "width": int(asset["width"]),
+                "height": int(asset["height"]),
+                "prompt": job["grounding_prompt"],
+                "prompt_normalization_mode": options.get(
+                    "grounding_prompt_normalization_mode"
+                ),
+                "prompt_normalization_profile": options.get(
+                    "grounding_prompt_normalization_profile"
+                ),
+                "prompt_translation_failure_policy": options.get(
+                    "grounding_prompt_translation_failure_policy"
+                ),
+            }
+            prepare_prompt = getattr(
+                self.predictor,
+                "prepare_prompt",
+                None,
             )
+            prompt_prepare_ms = 0.0
+            if callable(prepare_prompt):
+                prompt_started = time.perf_counter()
+                try:
+                    prepared_prompt = prepare_prompt(
+                        prompt=job["grounding_prompt"],
+                        prompt_normalization_mode=options.get(
+                            "grounding_prompt_normalization_mode"
+                        ),
+                        prompt_normalization_profile=options.get(
+                            "grounding_prompt_normalization_profile"
+                        ),
+                        prompt_translation_failure_policy=options.get(
+                            "grounding_prompt_translation_failure_policy"
+                        ),
+                    )
+                    prompt_prepare_ms = (
+                        time.perf_counter() - prompt_started
+                    ) * 1000
+                except PromptRouteFailure as exc:
+                    self.store.update_job(
+                        job_id,
+                        expected_status=job["status"],
+                        grounding_prompt_route=exc.route,
+                        worker_id=self.worker_id,
+                    )
+                    raise
+                if prepared_prompt.route is not None:
+                    self.store.update_job(
+                        job_id,
+                        expected_status=job["status"],
+                        grounding_prompt_route=prepared_prompt.route,
+                        worker_id=self.worker_id,
+                    )
+                prediction_arguments["prepared_prompt"] = prepared_prompt
+            inference_started = time.perf_counter()
+            detections = self.predictor.predict(
+                **prediction_arguments,
+            )
+            inference_ms = (
+                time.perf_counter() - inference_started
+            ) * 1000
+            timing_metadata = {
+                "prompt_prepare_ms": round(prompt_prepare_ms, 3),
+                "inference_ms": round(inference_ms, 3),
+            }
             saved_detections = self.store.replace_detections(
                 job_id=job_id,
                 asset_id=asset_id,
                 detections=[
-                    detection.as_storage_payload()
+                    {
+                        **detection.as_storage_payload(),
+                        "metadata": {
+                            **detection.as_storage_payload().get(
+                                "metadata",
+                                {},
+                            ),
+                            "timings_ms": timing_metadata,
+                        },
+                    }
                     for detection in detections
                 ],
                 worker_id=self.worker_id,
             )
+            overlay_started = time.perf_counter()
             overlay = render_detection_overlay(
                 image_path=Path(image_path),
                 detections=saved_detections,
+            )
+            overlay_render_ms = (
+                time.perf_counter() - overlay_started
+            ) * 1000
+            timing_metadata["overlay_render_ms"] = round(
+                overlay_render_ms,
+                3,
+            )
+            timing_metadata["total_before_artifact_write_ms"] = round(
+                (time.perf_counter() - asset_started) * 1000,
+                3,
             )
             self.store.store_job_artifact(
                 job_id=job_id,
@@ -230,9 +314,21 @@ class GroundingDINOJobWorker:
                 worker_id=self.worker_id,
                 metadata={
                     "grounding_prompt": job["grounding_prompt"],
+                    "grounding_prompt_normalization_mode": options.get(
+                        "grounding_prompt_normalization_mode"
+                    ),
+                    "grounding_prompt_normalization_profile": options.get(
+                        "grounding_prompt_normalization_profile"
+                    ),
+                    "grounding_prompt_translation_failure_policy": (
+                        options.get(
+                            "grounding_prompt_translation_failure_policy"
+                        )
+                    ),
                     "detection_count": len(saved_detections),
                     "model_version": self.predictor.model_version,
                     "prompt_version": self.predictor.prompt_version,
+                    "timings_ms": timing_metadata,
                 },
             )
             self.store.update_job_asset(
@@ -240,6 +336,13 @@ class GroundingDINOJobWorker:
                 asset_id=asset_id,
                 status="succeeded",
                 worker_id=self.worker_id,
+            )
+            LOGGER.info(
+                "GroundingDINO asset completed: prompt_ms=%.1f "
+                "inference_ms=%.1f overlay_ms=%.1f",
+                prompt_prepare_ms,
+                inference_ms,
+                overlay_render_ms,
             )
             return None
         except VersionConflictError:

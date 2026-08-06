@@ -6,7 +6,7 @@ USER root
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/opt/lisa-annotation:/opt/GroundingDINO \
+    PYTHONPATH=/opt/lisa-annotation:/opt/GroundingDINO:/app \
     TRANSFORMERS_OFFLINE=1 \
     HF_HUB_OFFLINE=1
 

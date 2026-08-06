@@ -40,10 +40,23 @@ def main() -> int:
             device=settings.device,
             model_version=settings.model_version,
             prompt_version=settings.prompt_version,
+            prompt_normalization_mode=settings.prompt_normalization_mode,
+            prompt_normalization_profile=(
+                settings.prompt_normalization_profile
+            ),
+            prompt_translation_failure_policy=(
+                settings.prompt_translation_failure_policy
+            ),
             box_threshold=settings.box_threshold,
             text_threshold=settings.text_threshold,
-        )
+        ),
+        prompt_translator=settings.prompt_translator(),
     )
+    if not args.once:
+        predictor.load()
+        logging.getLogger(__name__).info(
+            "GroundingDINO model preloaded and ready"
+        )
     worker = GroundingDINOJobWorker(
         store=store,
         predictor=predictor,

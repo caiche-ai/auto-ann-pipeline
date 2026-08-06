@@ -44,6 +44,10 @@ PUBLIC_JOB_FIELDS = {
     "stage",
     "pipeline_version",
     "grounding_prompt",
+    "grounding_prompt_normalization_mode",
+    "grounding_prompt_normalization_profile",
+    "grounding_prompt_translation_failure_policy",
+    "grounding_prompt_route",
     "progress",
     "stages",
     "errors",
@@ -62,7 +66,7 @@ def _model_json(model: Any) -> dict[str, Any]:
 
 def _public_job(payload: dict[str, Any]) -> dict[str, Any]:
     public = {
-        field: payload[field]
+        field: payload.get(field)
         for field in PUBLIC_JOB_FIELDS
     }
     public["progress"] = {
@@ -112,6 +116,21 @@ def build_jobs_router(
     ) -> dict[str, Any]:
         store = require_storage()
         request_payload = _model_json(request)
+        fields_set = getattr(request, "model_fields_set", None)
+        if fields_set is None:
+            fields_set = getattr(request, "__fields_set__", set())
+        if "grounding_prompt_normalization_mode" not in fields_set:
+            request_payload["grounding_prompt_normalization_mode"] = (
+                settings.prompt_normalization_mode
+            )
+        if "grounding_prompt_normalization_profile" not in fields_set:
+            request_payload["grounding_prompt_normalization_profile"] = (
+                settings.prompt_normalization_profile
+            )
+        if "grounding_prompt_translation_failure_policy" not in fields_set:
+            request_payload[
+                "grounding_prompt_translation_failure_policy"
+            ] = settings.prompt_translation_failure_policy
         job = await asyncio.to_thread(
             store.create_job,
             asset_ids=request_payload["asset_ids"],
@@ -122,6 +141,21 @@ def build_jobs_router(
                 "enrich_prompts": False,
                 "prompt_count": 6,
                 "stop_after": "grounding_dino",
+                "grounding_prompt_normalization_mode": (
+                    request_payload[
+                        "grounding_prompt_normalization_mode"
+                    ]
+                ),
+                "grounding_prompt_normalization_profile": (
+                    request_payload[
+                        "grounding_prompt_normalization_profile"
+                    ]
+                ),
+                "grounding_prompt_translation_failure_policy": (
+                    request_payload[
+                        "grounding_prompt_translation_failure_policy"
+                    ]
+                ),
             },
             max_queued_jobs=settings.max_queued_jobs,
             idempotency_key=idempotency_key,

@@ -3,6 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .prompt_normalization import (
+    PROMPT_NORMALIZATION_MODES,
+    PROMPT_NORMALIZATION_PROFILE_NAMES,
+    PROMPT_TRANSLATION_FAILURE_POLICIES,
+)
+
 
 def _get_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -49,7 +55,7 @@ def _get_optional_secret(name: str) -> str | None:
 
 @dataclass(frozen=True)
 class Settings:
-    service_version: str = "1.1.0"
+    service_version: str = "1.5.1"
     api_key: str | None = None
     cors_origins: tuple[str, ...] = ()
     cors_allow_credentials: bool = False
@@ -61,12 +67,17 @@ class Settings:
     docs_enabled: bool = True
     storage_enabled: bool = False
     storage_root: str = "./annotation-data"
+    prompt_normalization_mode: str = "terminal_period"
+    prompt_normalization_profile: str = "construction_safety_v1"
+    prompt_translation_failure_policy: str = (
+        "fallback_canonical_terms"
+    )
 
     @classmethod
     def from_env(cls) -> "Settings":
         settings = cls(
             service_version=os.getenv(
-                "ANNOTATION_SERVICE_VERSION", "1.1.0"
+                "ANNOTATION_SERVICE_VERSION", "1.5.1"
             ).strip(),
             api_key=_get_optional_secret("ANNOTATION_API_KEY"),
             cors_origins=_get_origins("ANNOTATION_CORS_ORIGINS"),
@@ -98,6 +109,18 @@ class Settings:
             storage_root=os.getenv(
                 "ANNOTATION_STORAGE_ROOT", "./annotation-data"
             ).strip(),
+            prompt_normalization_mode=os.getenv(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_MODE",
+                "terminal_period",
+            ).strip(),
+            prompt_normalization_profile=os.getenv(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_PROFILE",
+                "construction_safety_v1",
+            ).strip(),
+            prompt_translation_failure_policy=os.getenv(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_TRANSLATION_FAILURE_POLICY",
+                "fallback_canonical_terms",
+            ).strip(),
         )
         settings.validate()
         return settings
@@ -117,4 +140,44 @@ class Settings:
         if self.storage_enabled and not self.storage_root:
             raise ValueError(
                 "ANNOTATION_STORAGE_ROOT must not be empty when storage is enabled"
+            )
+        if self.prompt_normalization_mode not in PROMPT_NORMALIZATION_MODES:
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_MODE must be "
+                f"one of: {', '.join(PROMPT_NORMALIZATION_MODES)}"
+            )
+        if not self.prompt_normalization_profile:
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_PROFILE must "
+                "not be empty"
+            )
+        if (
+            self.prompt_normalization_profile
+            not in PROMPT_NORMALIZATION_PROFILE_NAMES
+        ):
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_PROFILE must "
+                "be one of: "
+                f"{', '.join(PROMPT_NORMALIZATION_PROFILE_NAMES)}"
+            )
+        expected_profile = {
+            "canonical_terms": "construction_safety_v1",
+            "llm_grounding_caption": "open_semantic_zh_en_v1",
+        }.get(self.prompt_normalization_mode)
+        if (
+            expected_profile is not None
+            and self.prompt_normalization_profile != expected_profile
+        ):
+            raise ValueError(
+                f"{self.prompt_normalization_mode} requires profile "
+                f"{expected_profile}"
+            )
+        if (
+            self.prompt_translation_failure_policy
+            not in PROMPT_TRANSLATION_FAILURE_POLICIES
+        ):
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_PROMPT_TRANSLATION_FAILURE_POLICY "
+                "must be one of: "
+                f"{', '.join(PROMPT_TRANSLATION_FAILURE_POLICIES)}"
             )

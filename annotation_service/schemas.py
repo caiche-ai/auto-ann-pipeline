@@ -7,6 +7,12 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, root_validator, validator
 
+from .prompt_normalization import (
+    PromptNormalizationMode,
+    PromptNormalizationProfile,
+    PromptTranslationFailurePolicy,
+)
+
 
 class StrictModel(BaseModel):
     class Config:
@@ -109,6 +115,7 @@ class OperationStatus(str, Enum):
 class OperationType(str, Enum):
     MASK_CANDIDATE = "mask_candidate"
     PROMPT_ENRICHMENT = "prompt_enrichment"
+    JOINT_PROMPT_ENRICHMENT = "joint_prompt_enrichment"
 
 
 class ReleaseStatus(str, Enum):
@@ -149,6 +156,7 @@ class ErrorPayload(StrictModel):
 
 class HealthResponse(StrictModel):
     status: Literal["ok"] = "ok"
+    version: str
 
 
 class ReadinessResponse(StrictModel):
@@ -183,6 +191,15 @@ class JobOptions(StrictModel):
     enrich_prompts: bool = True
     prompt_count: Literal[6] = 6
     stop_after: Optional[PipelineStage] = None
+    grounding_prompt_normalization_mode: PromptNormalizationMode = (
+        "terminal_period"
+    )
+    grounding_prompt_normalization_profile: PromptNormalizationProfile = (
+        "construction_safety_v1"
+    )
+    grounding_prompt_translation_failure_policy: (
+        PromptTranslationFailurePolicy
+    ) = "fallback_canonical_terms"
 
     @root_validator(skip_on_failure=True)
     def staged_execution_must_match_requested_outputs(cls, values):
@@ -204,6 +221,24 @@ class JobOptions(StrictModel):
                 "a full pipeline job requires generate_masks=true and "
                 "enrich_prompts=true"
             )
+        mode = values.get("grounding_prompt_normalization_mode")
+        profile = values.get("grounding_prompt_normalization_profile")
+        if (
+            mode == "canonical_terms"
+            and profile != "construction_safety_v1"
+        ):
+            raise ValueError(
+                "canonical_terms requires profile "
+                "construction_safety_v1"
+            )
+        if (
+            mode == "llm_grounding_caption"
+            and profile != "open_semantic_zh_en_v1"
+        ):
+            raise ValueError(
+                "llm_grounding_caption requires profile "
+                "open_semantic_zh_en_v1"
+            )
         return values
 
 
@@ -214,6 +249,15 @@ class CreateJobRequest(StrictModel):
         min_length=1,
         max_length=2000,
     )
+    grounding_prompt_normalization_mode: PromptNormalizationMode = (
+        "terminal_period"
+    )
+    grounding_prompt_normalization_profile: PromptNormalizationProfile = (
+        "construction_safety_v1"
+    )
+    grounding_prompt_translation_failure_policy: (
+        PromptTranslationFailurePolicy
+    ) = "fallback_canonical_terms"
     pipeline_version: str = Field(
         default="groundingdino-free-form-v1",
         min_length=1,
@@ -226,12 +270,53 @@ class CreateJobRequest(StrictModel):
             raise ValueError("items must be unique")
         return value
 
-    @validator("grounding_prompt", "pipeline_version")
+    @validator(
+        "grounding_prompt",
+        "pipeline_version",
+        "grounding_prompt_normalization_profile",
+    )
     def text_must_not_be_blank(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("value must not be blank")
         return normalized
+
+    @validator("grounding_prompt_normalization_mode")
+    def mode_must_be_supported(cls, value: str) -> str:
+        if value not in {
+            "off",
+            "terminal_period",
+            "canonical_terms",
+            "llm_grounding_caption",
+        }:
+            raise ValueError(
+                "grounding_prompt_normalization_mode must be one of: "
+                "off, terminal_period, canonical_terms, "
+                "llm_grounding_caption"
+            )
+        return value
+
+    @root_validator(skip_on_failure=True)
+    def normalization_mode_must_match_profile(cls, values):
+        mode = values.get("grounding_prompt_normalization_mode")
+        profile = values.get("grounding_prompt_normalization_profile")
+        if (
+            mode == "canonical_terms"
+            and profile != "construction_safety_v1"
+        ):
+            raise ValueError(
+                "canonical_terms requires profile "
+                "construction_safety_v1"
+            )
+        if (
+            mode == "llm_grounding_caption"
+            and profile != "open_semantic_zh_en_v1"
+        ):
+            raise ValueError(
+                "llm_grounding_caption requires profile "
+                "open_semantic_zh_en_v1"
+            )
+        return values
 
 
 class JobProgress(StrictModel):
@@ -275,12 +360,30 @@ class DetectionJobProgress(StrictModel):
         return values
 
 
+class GroundingPromptRoute(StrictModel):
+    rule_attempted: bool
+    rule_matched: bool
+    llm_attempted: bool
+    llm_succeeded: bool
+    fallback_used: bool
+
+
 class Job(StrictModel):
     job_id: str
     status: JobStatus
     stage: Optional[Literal["grounding_dino"]] = None
     pipeline_version: str
     grounding_prompt: str
+    grounding_prompt_normalization_mode: PromptNormalizationMode = (
+        "terminal_period"
+    )
+    grounding_prompt_normalization_profile: PromptNormalizationProfile = (
+        "construction_safety_v1"
+    )
+    grounding_prompt_translation_failure_policy: (
+        PromptTranslationFailurePolicy
+    ) = "fallback_canonical_terms"
+    grounding_prompt_route: Optional[GroundingPromptRoute] = None
     progress: DetectionJobProgress
     stages: Dict[Literal["grounding_dino"], StageResult]
     errors: List[JobError] = Field(default_factory=list)
@@ -391,11 +494,32 @@ class JobHazardCandidatesResponse(StrictModel):
     total: int = Field(..., ge=0)
 
 
+class ReviewTaskBuildItem(StrictModel):
+    detection_id: str
+    task_id: str
+    task_version: int = Field(..., ge=1)
+    asset_id: str
+    box_xyxy: List[float]
+    created: bool
+
+    _box_is_valid = validator("box_xyxy", allow_reuse=True)(_validate_box)
+
+
+class DetectionOverlapWarning(StrictModel):
+    detection_ids: List[str] = Field(..., min_items=2, max_items=2)
+    box_iou: float = Field(..., ge=0, le=1)
+    message: str
+
+
 class BuildReviewTasksResponse(StrictModel):
     job_id: str
     task_ids: List[str] = Field(default_factory=list)
     created_count: int = Field(..., ge=0)
     existing_count: int = Field(..., ge=0)
+    items: List[ReviewTaskBuildItem] = Field(default_factory=list)
+    overlap_warnings: List[DetectionOverlapWarning] = Field(
+        default_factory=list
+    )
 
 
 class BuildDetectionTasksRequest(StrictModel):
@@ -586,6 +710,65 @@ class CreatePromptEnrichmentRequest(StrictModel):
     expected_version: int = Field(..., ge=1)
 
 
+class BatchMaskCandidateItem(StrictModel):
+    task_id: str = Field(..., min_length=1, max_length=128)
+    expected_version: int = Field(..., ge=1)
+    box_xyxy: List[float]
+
+    _box_is_valid = validator("box_xyxy", allow_reuse=True)(_validate_box)
+
+
+class BatchMaskCandidatesRequest(StrictModel):
+    items: List[BatchMaskCandidateItem] = Field(
+        ...,
+        min_items=1,
+        max_items=500,
+    )
+
+    @validator("items")
+    def task_ids_must_be_unique(cls, value):
+        task_ids = [item.task_id for item in value]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("batch task_id values must be unique")
+        return value
+
+
+class BatchPromptEnrichmentItem(StrictModel):
+    task_id: str = Field(..., min_length=1, max_length=128)
+    expected_version: int = Field(..., ge=1)
+
+
+class BatchPromptEnrichmentsRequest(StrictModel):
+    items: List[BatchPromptEnrichmentItem] = Field(
+        ...,
+        min_items=1,
+        max_items=500,
+    )
+
+    @validator("items")
+    def task_ids_must_be_unique(cls, value):
+        task_ids = [item.task_id for item in value]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("batch task_id values must be unique")
+        return value
+
+
+class JointPromptEnrichmentRequest(StrictModel):
+    items: List[BatchPromptEnrichmentItem] = Field(
+        ...,
+        min_items=2,
+        max_items=16,
+    )
+    mode: Literal["joint"] = "joint"
+
+    @validator("items")
+    def task_ids_must_be_unique(cls, value):
+        task_ids = [item.task_id for item in value]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("joint task_id values must be unique")
+        return value
+
+
 class CancelOperationRequest(StrictModel):
     actor_id: str = Field(..., min_length=1, max_length=128)
     reason: str = Field(..., min_length=1, max_length=2000)
@@ -607,17 +790,82 @@ class OperationAccepted(StrictModel):
     created_at: datetime
 
 
+class BatchOperationItemResult(StrictModel):
+    task_id: str
+    operation_id: Optional[str] = None
+    status: Literal["queued", "running", "rejected"]
+    created_at: Optional[datetime] = None
+    error: Optional[ErrorPayload] = None
+
+
+class BatchOperationsAccepted(StrictModel):
+    items: List[BatchOperationItemResult] = Field(default_factory=list)
+    accepted_count: int = Field(..., ge=0)
+    rejected_count: int = Field(..., ge=0)
+
+
+class TaskGroupOperationAccepted(StrictModel):
+    task_group_id: str
+    operation_id: str
+    status: Literal["queued", "running"] = "queued"
+    created_at: datetime
+
+
+class TaskGroupMember(StrictModel):
+    task_id: str
+    task_version: int = Field(..., ge=1)
+
+
+class TaskGroup(StrictModel):
+    task_group_id: str
+    asset_id: str
+    mode: Literal["joint"] = "joint"
+    source_task_ids: List[str] = Field(..., min_items=2, max_items=16)
+    items: List[TaskGroupMember] = Field(..., min_items=2, max_items=16)
+    operation_id: str
+    status: OperationStatus
+    facts: Optional[Dict[str, Any]] = None
+    prompts: List[AnnotationPrompt] = Field(default_factory=list)
+    provenance: Optional[Dict[str, Any]] = None
+    error: Optional[ErrorPayload] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
 class AnnotationOperation(StrictModel):
     operation_id: str
     operation_type: OperationType
-    task_id: str
-    task_version: int = Field(..., ge=1)
+    task_id: Optional[str] = None
+    task_version: Optional[int] = Field(default=None, ge=1)
+    task_group_id: Optional[str] = None
     status: OperationStatus
     result: Optional[Dict[str, Any]] = None
     error: Optional[ErrorPayload] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+
+    @root_validator(skip_on_failure=True)
+    def operation_has_one_owner(cls, values):
+        operation_type = values.get("operation_type")
+        task_id = values.get("task_id")
+        task_version = values.get("task_version")
+        task_group_id = values.get("task_group_id")
+        if operation_type == OperationType.JOINT_PROMPT_ENRICHMENT:
+            if not task_group_id or task_id is not None or task_version is not None:
+                raise ValueError(
+                    "joint prompt operation must belong only to a Task Group"
+                )
+        elif (
+            not task_id
+            or task_version is None
+            or task_group_id is not None
+        ):
+            raise ValueError(
+                "single-task operation must belong only to one Task"
+            )
+        return values
 
 
 class SplitPolicy(StrictModel):

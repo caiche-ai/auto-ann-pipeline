@@ -76,6 +76,13 @@ class JobApiTest(unittest.TestCase):
             "grounding_prompt": (
                 "worker without a helmet near the excavator"
             ),
+            "grounding_prompt_normalization_mode": "canonical_terms",
+            "grounding_prompt_normalization_profile": (
+                "construction_safety_v1"
+            ),
+            "grounding_prompt_translation_failure_policy": (
+                "fallback_canonical_terms"
+            ),
             "pipeline_version": "groundingdino-free-form-v1",
         }
         payload.update(overrides)
@@ -103,6 +110,19 @@ class JobApiTest(unittest.TestCase):
             "worker without a helmet near the excavator",
         )
         self.assertEqual(
+            job["grounding_prompt_normalization_mode"],
+            "canonical_terms",
+        )
+        self.assertEqual(
+            job["grounding_prompt_normalization_profile"],
+            "construction_safety_v1",
+        )
+        self.assertEqual(
+            job["grounding_prompt_translation_failure_policy"],
+            "fallback_canonical_terms",
+        )
+        self.assertIsNone(job["grounding_prompt_route"])
+        self.assertEqual(
             set(job["stages"]),
             {"grounding_dino"},
         )
@@ -121,6 +141,34 @@ class JobApiTest(unittest.TestCase):
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual(detail.json(), job)
 
+    def test_omitted_normalization_fields_use_service_settings(self):
+        self.client_context.__exit__(None, None, None)
+        self.client_context = TestClient(
+            create_app(
+                make_settings(
+                    prompt_normalization_mode="canonical_terms",
+                    prompt_normalization_profile="construction_safety_v1",
+                ),
+                storage=self.store,
+            )
+        )
+        self.client = self.client_context.__enter__()
+        payload = self.request_payload()
+        payload.pop("grounding_prompt_normalization_mode")
+        payload.pop("grounding_prompt_normalization_profile")
+
+        response = self.create_job(payload=payload)
+
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(
+            response.json()["grounding_prompt_normalization_mode"],
+            "canonical_terms",
+        )
+        self.assertEqual(
+            response.json()["grounding_prompt_normalization_profile"],
+            "construction_safety_v1",
+        )
+
     def test_prompt_content_is_not_restricted_by_category(self):
         prompt = "任意中文描述：找出蓝色设备旁边的人！@#$%^&*()"
         response = self.create_job(
@@ -131,12 +179,71 @@ class JobApiTest(unittest.TestCase):
             response.json()["grounding_prompt"],
             prompt,
         )
+        self.assertEqual(
+            response.json()["grounding_prompt_normalization_mode"],
+            "canonical_terms",
+        )
 
         old_contract = self.request_payload()
         old_contract.pop("grounding_prompt")
         old_contract["requested_categories"] = ["helmet_missing"]
         rejected = self.create_job(payload=old_contract)
         self.assertEqual(rejected.status_code, 422)
+
+    def test_open_semantic_translation_contract_is_persisted(self):
+        response = self.create_job(
+            payload=self.request_payload(
+                grounding_prompt="找出蓝色设备旁的施工人员",
+                grounding_prompt_normalization_mode=(
+                    "llm_grounding_caption"
+                ),
+                grounding_prompt_normalization_profile=(
+                    "open_semantic_zh_en_v1"
+                ),
+                grounding_prompt_translation_failure_policy="fail_job",
+            )
+        )
+
+        self.assertEqual(response.status_code, 202, response.text)
+        payload = response.json()
+        self.assertEqual(
+            payload["grounding_prompt_normalization_mode"],
+            "llm_grounding_caption",
+        )
+        self.assertEqual(
+            payload["grounding_prompt_normalization_profile"],
+            "open_semantic_zh_en_v1",
+        )
+        self.assertEqual(
+            payload["grounding_prompt_translation_failure_policy"],
+            "fail_job",
+        )
+        self.assertIsNone(payload["grounding_prompt_route"])
+
+    def test_job_response_exposes_persisted_prompt_route(self):
+        created = self.create_job().json()
+        route = {
+            "rule_attempted": True,
+            "rule_matched": False,
+            "llm_attempted": True,
+            "llm_succeeded": False,
+            "fallback_used": True,
+        }
+        self.store.update_job(
+            created["job_id"],
+            expected_status="queued",
+            grounding_prompt_route=route,
+        )
+
+        response = self.client.get(
+            f"/v1/annotation/jobs/{created['job_id']}"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            response.json()["grounding_prompt_route"],
+            route,
+        )
 
     def test_blank_or_oversized_prompt_is_rejected(self):
         blank = self.create_job(
@@ -220,7 +327,9 @@ class JobApiTest(unittest.TestCase):
         self.assertTrue(image.headers["etag"])
         self.assertEqual(image.content, png_bytes((30, 40, 50)))
 
-    def test_completed_detection_can_build_idempotent_review_task(self):
+    def test_completed_detections_build_mapped_tasks_with_overlap_warning(
+        self,
+    ):
         job_id = self.create_job().json()["job_id"]
         worker_id = "task-builder-test-worker"
         claimed = self.store.claim_next_job(
@@ -245,7 +354,20 @@ class JobApiTest(unittest.TestCase):
                         "box_threshold": 0.35,
                         "text_threshold": 0.25,
                     },
-                }
+                },
+                {
+                    "entity": "worker",
+                    "box_xyxy": [1.5, 1, 18.5, 9],
+                    "box_score": 0.87,
+                    "phrase_score": 0.81,
+                    "metadata": {
+                        "grounding_prompt": claimed["grounding_prompt"],
+                        "model_version": "dino-test",
+                        "prompt_version": "free-form-v1",
+                        "box_threshold": 0.35,
+                        "text_threshold": 0.25,
+                    },
+                },
             ],
             worker_id=worker_id,
         )
@@ -278,7 +400,9 @@ class JobApiTest(unittest.TestCase):
         )
 
         payload = {
-            "detection_ids": [saved[0]["detection_id"]],
+            "detection_ids": [
+                detection["detection_id"] for detection in saved
+            ],
             "category": "unsafe",
         }
         created = self.client.post(
@@ -286,7 +410,26 @@ class JobApiTest(unittest.TestCase):
             json=payload,
         )
         self.assertEqual(created.status_code, 200, created.text)
-        self.assertEqual(created.json()["created_count"], 1)
+        self.assertEqual(created.json()["created_count"], 2)
+        self.assertEqual(len(created.json()["items"]), 2)
+        self.assertEqual(
+            {
+                item["detection_id"]
+                for item in created.json()["items"]
+            },
+            {
+                detection["detection_id"]
+                for detection in saved
+            },
+        )
+        self.assertTrue(
+            all(item["created"] for item in created.json()["items"])
+        )
+        self.assertEqual(len(created.json()["overlap_warnings"]), 1)
+        self.assertGreaterEqual(
+            created.json()["overlap_warnings"][0]["box_iou"],
+            0.8,
+        )
         task_id = created.json()["task_ids"][0]
         task = self.client.get(
             f"/v1/annotation/tasks/{task_id}"
@@ -305,8 +448,17 @@ class JobApiTest(unittest.TestCase):
         )
         self.assertEqual(repeated.status_code, 200, repeated.text)
         self.assertEqual(repeated.json()["created_count"], 0)
-        self.assertEqual(repeated.json()["existing_count"], 1)
-        self.assertEqual(repeated.json()["task_ids"], [task_id])
+        self.assertEqual(repeated.json()["existing_count"], 2)
+        self.assertEqual(
+            repeated.json()["task_ids"],
+            created.json()["task_ids"],
+        )
+        self.assertTrue(
+            all(
+                not item["created"]
+                for item in repeated.json()["items"]
+            )
+        )
 
     def test_queued_job_can_be_cancelled(self):
         job_id = self.create_job().json()["job_id"]

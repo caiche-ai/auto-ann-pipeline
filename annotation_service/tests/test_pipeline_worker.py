@@ -34,7 +34,18 @@ class FakeDINO:
         width,
         height,
         categories,
+        prompt_normalization_mode=None,
+        prompt_normalization_profile=None,
+        prompt_translation_failure_policy=None,
     ):
+        self.last_call = {
+            "categories": list(categories),
+            "prompt_normalization_mode": prompt_normalization_mode,
+            "prompt_normalization_profile": prompt_normalization_profile,
+            "prompt_translation_failure_policy": (
+                prompt_translation_failure_policy
+            ),
+        }
         return [
             GroundingDINODetection(
                 entity="person",
@@ -133,6 +144,12 @@ class FullPipelineWorkerTest(unittest.TestCase):
             asset_ids=[asset["asset_id"]],
             requested_categories=["helmet_missing"],
             pipeline_version="full-v1",
+            options={
+                "grounding_prompt_normalization_mode": "off",
+                "grounding_prompt_normalization_profile": (
+                    "construction_safety_v1"
+                ),
+            },
         )
         worker = FullAnnotationPipelineWorker(
             store=self.store,
@@ -153,6 +170,12 @@ class FullPipelineWorkerTest(unittest.TestCase):
             "queued",
         )
         self.assertEqual(completed["progress"]["generated_tasks"], 1)
+        self.assertEqual(
+            worker.detection_predictor.last_call[
+                "prompt_normalization_mode"
+            ],
+            "off",
+        )
         self.assertEqual(
             completed["stages"]["qwen_prompts"]["status"],
             "succeeded",

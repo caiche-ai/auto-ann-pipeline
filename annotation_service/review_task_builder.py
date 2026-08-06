@@ -8,6 +8,7 @@ from .storage import AnnotationStore, utc_now
 
 
 BUILDER_VERSION = "hazard-candidate-manual-task-v1"
+POSSIBLE_DUPLICATE_BOX_IOU = 0.8
 
 
 ENTITY_NAMES = {
@@ -61,6 +62,58 @@ def _position_anchor(
     horizontal = "左侧" if center_x < 1 / 3 else "右侧" if center_x > 2 / 3 else "中央"
     vertical = "上部" if center_y < 1 / 3 else "下部" if center_y > 2 / 3 else "中部"
     return f"目标框位于画面{horizontal}{vertical}"
+
+
+def _box_iou(left: list[float], right: list[float]) -> float:
+    intersection_width = max(
+        0.0,
+        min(left[2], right[2]) - max(left[0], right[0]),
+    )
+    intersection_height = max(
+        0.0,
+        min(left[3], right[3]) - max(left[1], right[1]),
+    )
+    intersection = intersection_width * intersection_height
+    if intersection <= 0:
+        return 0.0
+    left_area = (left[2] - left[0]) * (left[3] - left[1])
+    right_area = (right[2] - right[0]) * (right[3] - right[1])
+    union = left_area + right_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _overlap_warnings(
+    detections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for index, left in enumerate(detections):
+        for right in detections[index + 1 :]:
+            if left["asset_id"] != right["asset_id"]:
+                continue
+            if left["entity"].strip().casefold() != (
+                right["entity"].strip().casefold()
+            ):
+                continue
+            overlap = _box_iou(
+                left["box_xyxy"],
+                right["box_xyxy"],
+            )
+            if overlap < POSSIBLE_DUPLICATE_BOX_IOU:
+                continue
+            warnings.append(
+                {
+                    "detection_ids": [
+                        left["detection_id"],
+                        right["detection_id"],
+                    ],
+                    "box_iou": round(overlap, 6),
+                    "message": (
+                        "同类别检测框高度重叠，可能指向同一实例；"
+                        "请在确认 mask 前人工去重。"
+                    ),
+                }
+            )
+    return warnings
 
 
 def _provenance(
@@ -257,6 +310,7 @@ def build_detection_review_tasks(
 
     before = set(job["task_ids"])
     task_ids: list[str] = []
+    items: list[dict[str, Any]] = []
     for detection_id in selected_ids:
         detection = by_id[detection_id]
         asset = store.get_asset(detection["asset_id"])
@@ -307,6 +361,16 @@ def build_detection_review_tasks(
             source_detection_id=detection_id,
         )
         task_ids.append(task["task_id"])
+        items.append(
+            {
+                "detection_id": detection_id,
+                "task_id": task["task_id"],
+                "task_version": task["version"],
+                "asset_id": detection["asset_id"],
+                "box_xyxy": detection["box_xyxy"],
+                "created": task["task_id"] not in before,
+            }
+        )
 
     created = len(set(task_ids) - before)
     return {
@@ -314,4 +378,8 @@ def build_detection_review_tasks(
         "task_ids": task_ids,
         "created_count": created,
         "existing_count": len(task_ids) - created,
+        "items": items,
+        "overlap_warnings": _overlap_warnings(
+            [by_id[detection_id] for detection_id in selected_ids]
+        ),
     }
