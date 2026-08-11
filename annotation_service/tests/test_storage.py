@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -7,14 +8,14 @@ from pathlib import Path
 
 from PIL import Image
 
-from annotation_service.errors import (
+from annotation_service.api.errors import (
     IdempotencyConflictError,
     InvalidStateTransitionError,
     ResourceNotFoundError,
     VersionConflictError,
 )
-from annotation_service.storage import AnnotationStore
-from annotation_service.storage_schema import SCHEMA_V1, SCHEMA_V2
+from annotation_service.storage.repository import AnnotationStore
+from annotation_service.storage.schema import SCHEMA_V1, SCHEMA_V2
 
 
 def png_bytes(color: tuple[int, int, int]) -> bytes:
@@ -101,6 +102,7 @@ class AnnotationStoreTest(unittest.TestCase):
             "overlays",
             "crops",
             "exports",
+            "submissions",
             "tmp",
         ):
             self.assertTrue((self.root / name).is_dir())
@@ -470,6 +472,20 @@ class AnnotationStoreTest(unittest.TestCase):
             primary_result="prompt_rewritten",
             comment="一级标注已确认",
         )
+        review_snapshot = (
+            self.root
+            / "submissions"
+            / task["task_id"]
+            / f"v{submitted['version']:08d}.json"
+        )
+        self.assertTrue(review_snapshot.is_file())
+        snapshot_payload = json.loads(review_snapshot.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot_payload["annotator_id"], "annotator-1")
+        self.assertEqual(snapshot_payload["status"], "review_pending")
+        self.assertEqual(
+            snapshot_payload["annotation"]["target_object"],
+            "画面中央未戴安全帽的一名人员",
+        )
         accepted = self.store.review_task(
             task["task_id"],
             expected_version=submitted["version"],
@@ -496,6 +512,22 @@ class AnnotationStoreTest(unittest.TestCase):
                 annotation=annotation(),
                 editor_id="late-editor",
             )
+
+    def test_initialize_migrates_legacy_review_submissions(self):
+        root = Path(self.temporary.name) / "legacy-annotation-data"
+        legacy_snapshot = (
+            root / "review" / "submissions" / "tsk_legacy" / "v00000003.json"
+        )
+        legacy_snapshot.parent.mkdir(parents=True)
+        legacy_snapshot.write_text('{"task_id":"tsk_legacy"}\n', encoding="utf-8")
+
+        store = AnnotationStore(root)
+        store.initialize()
+        store.close()
+
+        migrated = root / "submissions" / "tsk_legacy" / "v00000003.json"
+        self.assertEqual(migrated.read_bytes(), b'{"task_id":"tsk_legacy"}\n')
+        self.assertFalse((root / "review").exists())
 
     def test_artifacts_are_atomic_and_latest_candidate_is_returned(self):
         asset = self.create_asset()

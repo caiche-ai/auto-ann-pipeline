@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from annotation_service.config import Settings
+from annotation_service.api.config import Settings
 
 
 class SettingsTest(unittest.TestCase):

@@ -1,12 +1,12 @@
 import json
 import unittest
 
-from annotation_service.prompt_normalization import (
+from annotation_service.pipeline.grounding_dino.prompt import (
     PromptRouteFailure,
     PromptTranslation,
     normalize_grounding_prompt,
 )
-from annotation_service.prompt_translation import (
+from annotation_service.pipeline.grounding_dino.translation import (
     OpenAICompatiblePromptTranslator,
     PromptTranslationConfig,
     PromptTranslationError,

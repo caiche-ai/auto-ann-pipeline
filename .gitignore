@@ -23,8 +23,21 @@ logs/
 run/
 annotation_service.backup*/
 
-# Vendored external dependencies and generated artifacts
-dependencies/
+# Developer-facing annotation review workspace
+/review_workspace/outputs/*
+!/review_workspace/outputs/.gitkeep
+/review_workspace/exports/*
+!/review_workspace/exports/.gitkeep
+
+# Developer-facing pipeline debug workspace
+/debug/sessions/*
+!/debug/sessions/.gitkeep
+
+# External source checkouts and generated artifacts
+# SAM's pinned Python source is tracked under third_party/segment_anything.
+# GroundingDINO remains a deployment-local checkout because it is a complete
+# upstream project with its own build products.
+/third_party/GroundingDINO/
 *.db
 *.db-*
 *.log

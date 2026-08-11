@@ -7,18 +7,18 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from annotation_service.storage import AnnotationStore
-from annotation_service.prompt_normalization import (
+from annotation_service.storage.repository import AnnotationStore
+from annotation_service.pipeline.grounding_dino.prompt import (
     normalize_grounding_prompt as normalize_grounding_prompt_result,
 )
-from annotation_service.worker.grounding_dino import (
+from annotation_service.pipeline.grounding_dino.adapter import (
     GroundingDINODetection,
     GroundingPromptPreparation,
     normalize_grounding_prompt,
     normalized_cxcywh_to_xyxy,
 )
-from annotation_service.worker.runner import GroundingDINOJobWorker
-from annotation_service.worker.settings import GroundingDINOWorkerSettings
+from annotation_service.pipeline.grounding_dino.worker import GroundingDINOJobWorker
+from annotation_service.pipeline.grounding_dino.settings import GroundingDINOWorkerSettings
 
 
 def png_bytes(

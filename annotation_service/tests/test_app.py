@@ -4,9 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from annotation_service.app import create_app
-from annotation_service.config import Settings
-from annotation_service.errors import ResourceNotFoundError
+from annotation_service.api.app import create_app
+from annotation_service.api.config import Settings
+from annotation_service.api.errors import ResourceNotFoundError
 
 
 def settings(**overrides) -> Settings:

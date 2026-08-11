@@ -1,6 +1,6 @@
 import unittest
 
-from annotation_service.hazard_rules import HazardRuleEngine
+from annotation_service.pipeline.hazard_rules import HazardRuleEngine
 
 
 def detection(

@@ -8,7 +8,7 @@
   -> GroundingDINO bbox
   -> 选择检测框并创建 Task
   -> SAM 按框生成 mask、polygon 和 overlay
-  -> Qwen2.5-VL 生成单目标或多目标联合 3+2+1 Prompt 候选
+  -> Qwen2.5-VL 单次提取视觉事实，服务端确定性生成 3+2+1 Prompt 候选
   -> 人工选择、修改并保存草稿
   -> 提交审核或作废
   -> 可选构建 ReasonSeg Release
@@ -64,8 +64,8 @@ GET  /v1/annotation/releases/{release_id}/archive
 
 完整 Spring 契约：
 
-- `docs_caich/annotation_api.md`
-- `docs_caich/annotation_openapi.yaml`
+- `docs/annotation_api.md`
+- `docs/annotation_openapi.yaml`
 
 ## 持久化
 
@@ -77,6 +77,7 @@ annotation-data/
 ├── overlays/
 ├── crops/
 ├── exports/
+├── submissions/           # 标注人员每次提交的不可变 JSON 快照
 └── tmp/
 ```
 
@@ -146,13 +147,53 @@ GroundingDINO、BERT 和 SAM 权重使用 MODEL_STORE 中的绝对路径，不�
 仓库。Qwen 服务可以晚于 API 启动；在 Qwen 服务未就绪时，Prompt Operation
 会失败，但上传、检测和 SAM 不受影响。
 
+## 代码分层
+
+代码先按职责分层，模型相关代码再按自动标注流水线阶段组织：
+
+```text
+annotation_service/
+├── api/                 # FastAPI 应用、鉴权、配置、schema 与路由
+├── pipeline/            # DINO → SAM → Qwen 流水线编排
+│   ├── grounding_dino/  # bbox 推理、Prompt 处理与检测 Worker
+│   ├── sam/             # mask 推理与分割 Worker
+│   ├── qwen/            # 视觉事实、Prompt 契约与 Qwen Worker
+│   ├── worker.py        # 完整流水线入口
+│   └── runtime.py       # 模型 Worker 共用的租约心跳
+├── storage/             # SQLite 仓储、schema、状态机与数据校验
+├── review/              # 后台提交快照和 LISA 导出逻辑
+├── release/             # Release 构建逻辑与 Worker
+├── tools/               # 调试客户端、启动器和并发基准工具
+└── tests/               # 单元测试与契约测试
+```
+
+容器构建与部署文件位于仓库根目录的 `docker/`。
+
+三个模型包分别通过 `python -m annotation_service.pipeline.grounding_dino`、
+`python -m annotation_service.pipeline.sam` 和
+`python -m annotation_service.pipeline.qwen` 启动。完整流水线入口为
+`python -m annotation_service.pipeline`。
+
 ## 依赖
+
+第三方模型源码统一放在仓库根目录的 `third_party/` 下：
+
+```text
+third_party/
+├── segment_anything/  # 随仓库跟踪的精简 SAM Python 包
+└── GroundingDINO/     # 部署时准备的完整上游源码，不提交到 Git
+```
+
+模型权重、GroundingDINO 配置和离线 BERT 仍放在独立的 `MODEL_STORE` 中，
+不要复制到 `third_party/`。直接运行时，将
+`ANNOTATION_GROUNDING_DINO_ROOT` 指向 `third_party/GroundingDINO`；SAM 默认从
+`third_party.segment_anything` 导入。
 
 使用远程服务器已有的 PyTorch/CUDA 环境，不要覆盖其 PyTorch 版本：
 
 ```bash
 python -m pip install -r annotation_service/requirements.txt
-python -m pip install -r annotation_service/docker/requirements-worker.txt
+python -m pip install -r docker/requirements-worker.txt
 ```
 
 路径预检不会加载模型权重：
@@ -161,7 +202,7 @@ python -m pip install -r annotation_service/docker/requirements-worker.txt
 set -a
 source annotation_service/.env
 set +a
-python -c "from annotation_service.worker.settings import GroundingDINOWorkerSettings as D; from annotation_service.sam_worker import SAMWorkerSettings as S; d=D.from_env(); d.validate_model_files(); s=S.from_env(); s.model_config().validate(); print('model paths OK')"
+python -c "from annotation_service.pipeline.grounding_dino.settings import GroundingDINOWorkerSettings as D; from annotation_service.pipeline.sam.worker import SAMWorkerSettings as S; d=D.from_env(); d.validate_model_files(); s=S.from_env(); s.model_config().validate(); print('model paths OK')"
 ```
 
 ## 直接启动 Python
@@ -174,7 +215,7 @@ API：
 set -a
 source annotation_service/.env
 set +a
-python -m uvicorn annotation_service.app:app --host 0.0.0.0 --port 8008
+python -m uvicorn annotation_service.api.app:app --host 0.0.0.0 --port 8008
 ```
 
 GroundingDINO Worker：
@@ -183,7 +224,7 @@ GroundingDINO Worker：
 set -a
 source annotation_service/.env
 set +a
-python -m annotation_service.worker
+python -m annotation_service.pipeline.grounding_dino
 ```
 
 SAM Worker：
@@ -192,7 +233,7 @@ SAM Worker：
 set -a
 source annotation_service/.env
 set +a
-python -m annotation_service.sam_worker
+python -m annotation_service.pipeline.sam
 ```
 
 Qwen Prompt Worker：
@@ -201,7 +242,7 @@ Qwen Prompt Worker：
 set -a
 source annotation_service/.env
 set +a
-python -m annotation_service.qwen_worker
+python -m annotation_service.pipeline.qwen
 ```
 
 可选 Release Worker：
@@ -210,7 +251,7 @@ python -m annotation_service.qwen_worker
 set -a
 source annotation_service/.env
 set +a
-python -m annotation_service.release_worker
+python -m annotation_service.release
 ```
 
 每种 Worker 都支持 `--once`。没有可领取任务时返回退出码 3。
@@ -239,18 +280,88 @@ SAM 和 Qwen 的 Operation 结果是候选，不会自动覆盖人工草稿。Sp
 最新 Task，将选择的 `shapes`、事实和 Prompt 合并为完整 `annotation` 后调用
 draft。这样可以避免异步模型结果覆盖用户正在编辑的内容。
 
-检测框支持单选或多选。`review-tasks` 始终保持一个 detection 对应一个 Task；
-批量 SAM 接口一次接收多个 Task，同一图片只执行一次 `set_image()`，所有 box
-通过一次 `predict_torch` 解码；每个 box 仍独立选择最高 predicted IoU 的
-SAM 候选并保存到自己的 Task。检测完成后会自动后台预编码 SAM embedding，
-同图后续编辑继续复用缓存。批量 Prompt 接口同样按 Task 返回 Operation，
-单项失败不会阻止同批其他任务入队。
-需要描述多个目标整体关系时使用 Task Group 接口；它会把同图各成员的 mask
-和 crop 一次交给 Qwen。联合模式只调用一次模型提取视觉事实，再由服务端
-确定性生成完整 3+2+1 Prompt；结果只归属 Group，不会覆盖任一单目标 Task。
+检测框支持单选或多选。`review-tasks` 将同一图片上人工选中的所有 detection
+合并为一个样本级 Task。该 Task 的 SAM 请求携带 `boxes_xyxy` 和对应的
+`detection_ids`；同一图片只执行一次 `set_image()`，所有 box 通过一次
+`predict_torch` 解码。结果保留各实例 polygon 及来源 detection，同时保存一张
+联合 mask、overlay 和 crop。检测完成后会自动后台预编码 SAM embedding，同图
+后续编辑继续复用缓存。旧的单框 `box_xyxy` 请求仍兼容。
+单目标和 Task Group 模式都会把原图、mask 与 crop 一次交给 Qwen 提取视觉事实，
+再由服务端确定性生成完整 3+2+1 Prompt，不再为 Prompt 文本发起第二次 Qwen 调用。
+需要描述多个目标整体关系时使用 Task Group 接口；联合结果只归属 Group，不会覆盖
+任一单目标 Task。
 
 同类别检测框 IoU 不低于 `0.8` 时，`review-tasks.overlap_warnings` 会提示可能
-重复实例，但服务不会自动删除检测框或合并 mask，最终去重由人工确认。
+重复实例，但服务不会自动删除检测框；最终选择和去重由人工确认。
+
+## 审核区、可视化与 LISA 导出
+
+标注人员调用 `POST /tasks/{task_id}/submit` 后，服务在数据库事务提交前写入一份
+不可变审核快照：
+
+```text
+<ANNOTATION_STORAGE_ROOT>/submissions/<task_id>/
+├── v00000003.json   # 指定任务版本的原始提交
+└── current.json     # 最近一次提交的便捷副本
+```
+
+快照包含标注 JSON、标注人员、任务版本、原图相对路径、图片 SHA256、类别、来源
+信息和提交备注。数据库仍然是任务状态的权威来源；审核区用于人工检查和审计，
+不允许绕过审核状态直接进入正式 Release。
+
+首次启用时，将数据库中已有的历史提交幂等回填到审核区：
+
+```bash
+python -m annotation_service.review.backfill
+```
+
+`review/` 是系统后台功能。审核人员直接查看由工具脚本生成的自包含 PNG：图片
+上半部分叠加 target/ignore polygon，下半部分写入任务、标注人员、目标信息和全部
+3+2+1 Prompt，不需要另开 HTML 或 JSON。
+
+```bash
+set -a
+source annotation_service/.env
+set +a
+python -m annotation_service.tools.render_annotation_results
+```
+
+默认输出到仓库根目录 `review_workspace/outputs/`。可以用 `--task-id <id>` 只渲染
+指定任务，或用 `--all-versions` 渲染所有历史提交。服务器会自动使用 Noto CJK
+中文字体；其他环境可通过 `--font` 或 `ANNOTATION_REVIEW_FONT` 指定字体文件。
+
+将数据库中审核状态为 `accepted` 的任务导出为 LISA ReasonSeg 格式：
+
+```bash
+python -m annotation_service.review.export_lisa \
+  --dataset-name ReasonSegReviewed
+```
+
+默认输出到仓库根目录
+`review_workspace/exports/ReasonSegReviewed-release/`，其中的数据集子目录包含按
+`group_id` 隔离的 `train/val/golden` 同名 `.jpg + .json`、
+`annotation_manifest.jsonl` 和构建摘要；Release 根目录包含 manifest 和
+`reasonseg.zip`。可以通过 `--output-root`、`--category`、`--task-id`、三个 split
+ratio 和 `--seed` 控制导出；脚本始终只导出 `accepted` 任务。
+
+## F5 分步调试 DINO、SAM 和 Prompt
+
+在 VS Code 运行 `Debug Staged DINO + SAM + Prompt`。该配置只启动一个入口脚本，
+并为本次运行创建隔离的数据目录。终端依次执行三个阶段：GroundingDINO 检测并
+人工选择检测框、SAM 多框分割、Qwen 单次提取视觉事实并由服务端生成 3+2+1 Prompt。每个阶段开始前按
+Enter 确认，也可以输入 `q` 停在当前阶段。三个模型 Worker 不会同时运行，日志
+也不会与图片路径或检测框选择提示混在一起。一次完成后可继续提交下一张图片，
+不需要重启调试会话。
+
+每次调试的数据和日志默认保存在仓库根目录 `debug/sessions/<run_id>/`；
+可通过 `ANNOTATION_DEBUG_ROOT` 改到其它磁盘。旧变量
+`ANNOTATION_DEBUG_WORKSPACE` 仍兼容。
+
+推荐断点位置：
+
+- `grounding_dino/worker.py` 的 DINO 推理和检测结果持久化处；
+- `review_task_builder.py` 的 `build_detection_review_tasks`；
+- `sam/worker.py` 的 `_process_batch` 和 `combine_sam_candidates`。
 
 ## 本地纯逻辑测试
 

@@ -1,8 +1,8 @@
 import unittest
 
-from annotation_service.errors import InvalidStateTransitionError
-from annotation_service.schemas import JobStatus, ReleaseStatus, TaskStatus
-from annotation_service.state_machine import (
+from annotation_service.api.errors import InvalidStateTransitionError
+from annotation_service.api.schemas import JobStatus, ReleaseStatus, TaskStatus
+from annotation_service.storage.state_machine import (
     ensure_job_transition,
     ensure_release_transition,
     ensure_task_transition,

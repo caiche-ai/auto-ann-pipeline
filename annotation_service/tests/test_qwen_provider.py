@@ -1,14 +1,14 @@
 import json
 import unittest
 
-from annotation_service.qwen_contract import (
+from annotation_service.pipeline.qwen.contract import (
     QwenContractError,
     QwenImageInput,
     QwenJointTarget,
     QwenJointVisualContext,
     QwenVisualContext,
 )
-from annotation_service.qwen_provider import (
+from annotation_service.pipeline.qwen.provider import (
     Qwen25VLProvider,
     QwenProviderConfig,
     QwenProviderError,
@@ -55,12 +55,17 @@ class FakeTransport:
                         )
                     }
                 }
-            ]
+            ],
+            "usage": {
+                "prompt_tokens": 321,
+                "completion_tokens": 45,
+                "total_tokens": 366,
+            },
         }
 
 
 class QwenProviderTest(unittest.TestCase):
-    def test_two_stage_generation_uses_one_configured_model(self):
+    def test_single_call_generation_uses_one_configured_model(self):
         transport = FakeTransport()
         provider = Qwen25VLProvider(
             QwenProviderConfig(
@@ -86,7 +91,7 @@ class QwenProviderTest(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(len(transport.calls), 1)
         self.assertEqual(
             transport.calls[0][0],
             "http://qwen25vl:8000/v1/chat/completions",
@@ -103,9 +108,12 @@ class QwenProviderTest(unittest.TestCase):
         self.assertTrue(
             any(item["type"] == "image_url" for item in first_content)
         )
-        second_content = transport.calls[1][2]["messages"][1]["content"]
-        self.assertIsInstance(second_content, str)
         self.assertEqual(len(result.prompt_set.prompts), 6)
+        self.assertEqual(result.timings_ms["model_calls"], 1)
+        self.assertIn("generation_call_ms", result.timings_ms)
+        self.assertEqual(result.usage["prompt_tokens"], 321)
+        self.assertEqual(result.usage["completion_tokens"], 45)
+        self.assertEqual(result.as_dict()["usage"]["total_tokens"], 366)
         self.assertEqual(
             result.as_dict()["provenance"]["qwen_model"],
             "qwen2.5-vl-7b-instruct",

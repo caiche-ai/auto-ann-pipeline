@@ -5,13 +5,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from annotation_service.qwen_contract import (
+from annotation_service.pipeline.qwen.contract import (
     QwenPromptSet,
     QwenVisualFacts,
 )
-from annotation_service.qwen_provider import QwenGenerationResult
-from annotation_service.qwen_worker import QwenPromptWorker
-from annotation_service.storage import AnnotationStore
+from annotation_service.pipeline.qwen.provider import QwenGenerationResult
+from annotation_service.pipeline.qwen.worker import QwenPromptWorker
+from annotation_service.storage.repository import AnnotationStore
 
 
 def png_bytes() -> bytes:

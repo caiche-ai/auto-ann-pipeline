@@ -1,7 +1,7 @@
 import unittest
 
-from annotation_service.errors import AnnotationValidationError
-from annotation_service.validation import (
+from annotation_service.api.errors import AnnotationValidationError
+from annotation_service.storage.validation import (
     normalize_request_id,
     parse_metadata_json,
     validate_annotation_for_submission,

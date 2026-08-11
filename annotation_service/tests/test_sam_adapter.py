@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from annotation_service.sam_adapter import SAMAdapter, SAMModelConfig
+from annotation_service.pipeline.sam.adapter import SAMAdapter, SAMModelConfig
 
 
 class FakeTensor:
@@ -94,6 +94,14 @@ class FakePredictor:
 
 
 class SAMAdapterTest(unittest.TestCase):
+    def test_default_package_uses_unified_third_party_tree(self):
+        config = SAMModelConfig(checkpoint_path=Path("unused.pth"))
+
+        self.assertEqual(
+            config.python_package,
+            "third_party.segment_anything",
+        )
+
     def test_batches_box_decoder_and_reuses_image_embedding(self):
         with tempfile.TemporaryDirectory() as directory:
             image_path = Path(directory) / "asset.png"
@@ -115,11 +123,11 @@ class SAMAdapterTest(unittest.TestCase):
 
             with (
                 patch(
-                    "annotation_service.sam_adapter.importlib.import_module",
+                    "annotation_service.pipeline.sam.adapter.importlib.import_module",
                     side_effect=import_module,
                 ),
                 patch(
-                    "annotation_service.sam_adapter._mask_to_shapes",
+                    "annotation_service.pipeline.sam.adapter._mask_to_shapes",
                     return_value=[
                         {
                             "shape_id": "sam-target-1",

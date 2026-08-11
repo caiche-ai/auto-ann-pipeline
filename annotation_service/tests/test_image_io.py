@@ -3,12 +3,12 @@ from io import BytesIO
 
 from PIL import Image
 
-from annotation_service.errors import (
+from annotation_service.api.errors import (
     RequestTooLargeError,
     UnsupportedMediaTypeError,
     ValidationServiceError,
 )
-from annotation_service.image_io import (
+from annotation_service.storage.image_io import (
     JPEG_SIGNATURE,
     PNG_SIGNATURE,
     detect_image_format,

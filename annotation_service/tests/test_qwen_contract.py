@@ -2,7 +2,7 @@ import base64
 import json
 import unittest
 
-from annotation_service.qwen_contract import (
+from annotation_service.pipeline.qwen.contract import (
     QwenContractError,
     QwenImageInput,
     QwenJointVisualFacts,
@@ -16,6 +16,7 @@ from annotation_service.qwen_contract import (
     build_joint_visual_facts_messages,
     build_prompt_enrichment_messages,
     build_visual_facts_messages,
+    ground_prompt_set,
     ground_joint_prompt_set,
     parse_joint_prompt_set,
     parse_joint_visual_facts,
@@ -83,6 +84,20 @@ class QwenContractTest(unittest.TestCase):
         self.assertEqual(plain.target_object, fenced.target_object)
         self.assertEqual(plain.instance_count, 1)
 
+    def test_empty_optional_risk_semantics_is_normalized_to_none(self):
+        payload = {**facts_payload(), "risk_semantics": "  "}
+
+        facts = parse_visual_facts(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        prompts = ground_prompt_set(facts=facts)
+
+        self.assertIsNone(facts.risk_semantics)
+        self.assertIn(
+            facts.visible_facts[0],
+            {item.prompt_id: item.text for item in prompts.prompts}["risk-1"],
+        )
+
     def test_visual_facts_reject_extra_or_duplicate_content(self):
         extra = {**facts_payload(), "unknown": "not allowed"}
         with self.assertRaises(QwenContractError):
@@ -107,6 +122,25 @@ class QwenContractTest(unittest.TestCase):
         duplicate["prompts"][1]["text"] = duplicate["prompts"][0]["text"]
         with self.assertRaises(QwenContractError):
             parse_prompt_set(json.dumps(duplicate, ensure_ascii=False))
+
+    def test_single_target_prompts_are_deterministically_grounded(self):
+        facts = QwenVisualFacts(**facts_payload())
+
+        first = ground_prompt_set(facts=facts)
+        second = ground_prompt_set(facts=facts)
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            [prompt.type.value for prompt in first.prompts],
+            ["visual", "visual", "visual", "risk", "risk", "agent"],
+        )
+        self.assertEqual(len({item.text for item in first.prompts}), 6)
+        by_id = {item.prompt_id: item.text for item in first.prompts}
+        self.assertIn(facts.target_object, by_id["visual-1"])
+        self.assertIn(facts.visual_anchor[0], by_id["visual-2"])
+        self.assertIn(facts.visible_facts[0], by_id["visual-3"])
+        self.assertIn(facts.risk_semantics, by_id["risk-1"])
+        self.assertIn(facts.mask_granularity, by_id["agent-1"])
 
     def test_joint_contract_requires_exact_task_coverage(self):
         facts = parse_joint_visual_facts(

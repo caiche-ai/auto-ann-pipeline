@@ -5,17 +5,17 @@ from pathlib import Path
 
 from PIL import Image
 
-from annotation_service.pipeline_worker import (
+from annotation_service.pipeline.worker import (
     FullAnnotationPipelineWorker,
 )
-from annotation_service.qwen_contract import (
+from annotation_service.pipeline.qwen.contract import (
     QwenPromptSet,
     QwenVisualFacts,
 )
-from annotation_service.qwen_provider import QwenGenerationResult
-from annotation_service.sam_adapter import SAMMaskCandidate
-from annotation_service.storage import AnnotationStore
-from annotation_service.worker.grounding_dino import (
+from annotation_service.pipeline.qwen.provider import QwenGenerationResult
+from annotation_service.pipeline.sam.adapter import SAMMaskCandidate
+from annotation_service.storage.repository import AnnotationStore
+from annotation_service.pipeline.grounding_dino.adapter import (
     GroundingDINODetection,
 )
 

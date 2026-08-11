@@ -6,9 +6,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from annotation_service.app import create_app
-from annotation_service.config import Settings
-from annotation_service.storage import AnnotationStore
+from annotation_service.api.app import create_app
+from annotation_service.api.config import Settings
+from annotation_service.storage.repository import AnnotationStore
 
 
 def png_bytes(

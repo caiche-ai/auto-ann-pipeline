@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from annotation_service.schemas import (
+from annotation_service.api.schemas import (
     AnnotationContent,
     AnnotationPrompt,
     CreateJobRequest,

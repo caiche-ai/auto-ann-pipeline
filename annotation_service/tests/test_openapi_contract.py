@@ -2,8 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
-from annotation_service.app import create_app
-from annotation_service.config import Settings
+from annotation_service.api.app import create_app
+from annotation_service.api.config import Settings
 
 
 def operation_ids(document: dict) -> set[str]:
@@ -19,7 +19,7 @@ class StaticOpenAPIContractTest(unittest.TestCase):
     def test_static_contract_matches_runtime_operations(self):
         static_path = (
             Path(__file__).resolve().parents[2]
-            / "docs_caich"
+            / "docs"
             / "annotation_openapi.yaml"
         )
         static = json.loads(static_path.read_text(encoding="utf-8"))

@@ -7,13 +7,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from annotation_service.errors import VersionConflictError
-from annotation_service.release_builder import (
+from annotation_service.api.errors import VersionConflictError
+from annotation_service.release.builder import (
     ReleaseWorker,
     build_release_files,
     split_for_group,
 )
-from annotation_service.storage import AnnotationStore, sha256_file
+from annotation_service.storage.repository import AnnotationStore, sha256_file
 
 
 def image_bytes(

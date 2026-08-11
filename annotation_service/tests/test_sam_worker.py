@@ -5,9 +5,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from annotation_service.sam_adapter import SAMMaskCandidate
-from annotation_service.sam_worker import SAMMaskWorker
-from annotation_service.storage import AnnotationStore
+from annotation_service.pipeline.sam.adapter import SAMMaskCandidate
+from annotation_service.pipeline.sam.worker import SAMMaskWorker
+from annotation_service.storage.repository import AnnotationStore
 
 
 def png_bytes(color=(10, 20, 30)) -> bytes:
@@ -193,6 +193,43 @@ class SAMMaskWorkerTest(unittest.TestCase):
                 second_operation["operation_id"]
             )["status"],
             "succeeded",
+        )
+
+    def test_one_task_accepts_multiple_boxes_in_one_sam_operation(self):
+        operation = self.store.create_mask_candidate_operation(
+            task_id=self.task["task_id"],
+            expected_version=1,
+            boxes_xyxy=[[1, 1, 5, 9], [5, 1, 9, 9]],
+            detection_ids=["det-left", "det-right"],
+        )
+        predictor = BatchFakeSAMPredictor()
+        worker = SAMMaskWorker(
+            store=self.store,
+            predictor=predictor,
+            worker_id="sam-multi-box-worker",
+            lease_seconds=60,
+            heartbeat_seconds=10,
+        )
+
+        self.assertTrue(worker.run_once())
+
+        completed = self.store.get_operation(operation["operation_id"])
+        self.assertEqual(completed["status"], "succeeded")
+        self.assertEqual(predictor.batch_calls, 1)
+        self.assertEqual(len(completed["result"]["shapes"]), 2)
+        self.assertEqual(
+            {
+                shape["source_detection_id"]
+                for shape in completed["result"]["shapes"]
+            },
+            {"det-left", "det-right"},
+        )
+        self.assertEqual(
+            completed["result"]["timings_ms"]["instance_count"],
+            2,
+        )
+        self.assertTrue(
+            completed["result"]["timings_ms"]["combined_mask"]
         )
 
     def test_worker_prefetches_recently_detected_asset_when_idle(self):

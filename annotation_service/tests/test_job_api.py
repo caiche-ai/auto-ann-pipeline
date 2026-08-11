@@ -7,9 +7,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from annotation_service.app import create_app
-from annotation_service.config import Settings
-from annotation_service.storage import AnnotationStore
+from annotation_service.api.app import create_app
+from annotation_service.api.config import Settings
+from annotation_service.storage.repository import AnnotationStore
 
 
 def png_bytes(
@@ -410,17 +410,20 @@ class JobApiTest(unittest.TestCase):
             json=payload,
         )
         self.assertEqual(created.status_code, 200, created.text)
-        self.assertEqual(created.json()["created_count"], 2)
-        self.assertEqual(len(created.json()["items"]), 2)
+        self.assertEqual(created.json()["created_count"], 1)
+        self.assertEqual(len(created.json()["items"]), 1)
+        built_item = created.json()["items"][0]
         self.assertEqual(
-            {
-                item["detection_id"]
-                for item in created.json()["items"]
-            },
-            {
-                detection["detection_id"]
-                for detection in saved
-            },
+            set(built_item["detection_ids"]),
+            {detection["detection_id"] for detection in saved},
+        )
+        expected_boxes = {
+            detection["detection_id"]: detection["box_xyxy"]
+            for detection in saved
+        }
+        self.assertEqual(
+            dict(zip(built_item["detection_ids"], built_item["boxes_xyxy"])),
+            expected_boxes,
         )
         self.assertTrue(
             all(item["created"] for item in created.json()["items"])
@@ -434,10 +437,16 @@ class JobApiTest(unittest.TestCase):
         task = self.client.get(
             f"/v1/annotation/tasks/{task_id}"
         ).json()
-        self.assertEqual(
+        self.assertIn(
             task["source_detection_id"],
-            saved[0]["detection_id"],
+            {detection["detection_id"] for detection in saved},
         )
+        self.assertEqual(
+            set(task["source_detection_ids"]),
+            {detection["detection_id"] for detection in saved},
+        )
+        self.assertEqual(len(task["detections"]), 2)
+        self.assertEqual(task["annotation"]["instance_count"], 2)
         self.assertEqual(task["provenance"]["grounding_prompt"], claimed[
             "grounding_prompt"
         ])
@@ -448,7 +457,7 @@ class JobApiTest(unittest.TestCase):
         )
         self.assertEqual(repeated.status_code, 200, repeated.text)
         self.assertEqual(repeated.json()["created_count"], 0)
-        self.assertEqual(repeated.json()["existing_count"], 2)
+        self.assertEqual(repeated.json()["existing_count"], 1)
         self.assertEqual(
             repeated.json()["task_ids"],
             created.json()["task_ids"],
