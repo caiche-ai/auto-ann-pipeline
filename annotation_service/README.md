@@ -8,7 +8,7 @@
   -> GroundingDINO bbox
   -> 选择检测框并创建 Task
   -> SAM 按框生成 mask、polygon 和 overlay
-  -> Qwen2.5-VL 单次提取视觉事实，服务端确定性生成 3+2+1 Prompt 候选
+  -> Qwen3-VL 按用户提示词直接生成 Prompt 候选
   -> 人工选择、修改并保存草稿
   -> 提交审核或作废
   -> 可选构建 ReasonSeg Release
@@ -16,7 +16,7 @@
 
 API 进程不加载模型。GroundingDINO、SAM 和 Qwen 分别由共享同一个
 `ANNOTATION_STORAGE_ROOT` 的 Worker 执行。Qwen Worker 通过 OpenAI 兼容的
-`/v1` HTTP 服务调用 Qwen2.5-VL。
+`/v1` HTTP 服务调用 Qwen3-VL。
 
 GroundingDINO Prompt 不使用类别或关键词白名单，只校验非空、首尾空白和
 2000 字符上限。Task 的 `category` 是标注业务分类，不会反向限制检测 Prompt。
@@ -50,6 +50,9 @@ POST /v1/annotation/tasks/{task_id}/invalidate
 POST /v1/annotation/tasks/{task_id}/review
 GET  /v1/annotation/tasks/{task_id}/artifacts/{artifact_type}
 
+GET  /v1/annotation/export?start_time=<ISO-8601>&end_time=<ISO-8601>
+GET  /v1/annotation/prompt-templates/default
+
 POST /v1/annotation/task-groups/prompt-enrichments
 GET  /v1/annotation/task-groups/{task_group_id}
 
@@ -61,6 +64,14 @@ GET  /v1/annotation/releases/{release_id}
 GET  /v1/annotation/releases/{release_id}/manifest
 GET  /v1/annotation/releases/{release_id}/archive
 ```
+
+`submit` is the final annotation action: it directly sets the Task to
+`accepted` and materializes one directory per uploaded image under
+`<ANNOTATION_STORAGE_ROOT>/submissions`. The directory contains the JPEG,
+LISA JSON, GroundingDINO JSON and boxes image, and SAM mask and overlay.
+No review or Release creation is required for `GET /v1/annotation/export`.
+The `start_time` and `end_time` bounds are inclusive; repeat the optional
+`task_id` query parameter to select exact submitted samples.
 
 完整 Spring 契约：
 
@@ -286,8 +297,19 @@ draft。这样可以避免异步模型结果覆盖用户正在编辑的内容。
 `predict_torch` 解码。结果保留各实例 polygon 及来源 detection，同时保存一张
 联合 mask、overlay 和 crop。检测完成后会自动后台预编码 SAM embedding，同图
 后续编辑继续复用缓存。旧的单框 `box_xyxy` 请求仍兼容。
-单目标和 Task Group 模式都会把原图、mask 与 crop 一次交给 Qwen 提取视觉事实，
-再由服务端确定性生成完整 3+2+1 Prompt，不再为 Prompt 文本发起第二次 Qwen 调用。
+单目标和 Task Group 模式默认只把原图交给 Qwen；调用方可以用 `include_mask`
+和 `include_crop` 选择附加输入。省略 `custom_instruction` 时使用服务端完整默认
+模板；提供该字段时，它就是发送给 Qwen 的全部文本输入，服务端不会再追加 system
+提示词、候选上下文、输出格式或图片标签，模型输入严格为自定义文本加所选图片。
+自定义模式也不会设置 OpenAI `response_format=json_object`，避免不含 `json` 字样的
+提示词被兼容端点直接以 HTTP 400 拒绝。模型可以返回纯文本、每行一条文本、字符串
+数组、单数 `prompt`/`text` 对象或标准 `prompts` 对象；服务端统一生成缺失的 ID，
+将缺失或未知 type 设为 `visual`，并去除空项和重复文本。调用方只需要求模型输出
+可直接用于 LISA `text` 字段的分割提示词。
+Qwen 一次直接生成最终 Prompt，不再先生成视觉事实 JSON，也不再套用固定 3+2+1
+文本模板。前端可以通过 `GET /prompt-templates/default` 获取完整默认模板；其中
+`{{candidate_context_json}}` 是服务端仅在默认执行时替换的动态上下文占位符，自定义
+提示词不会执行占位符替换。
 需要描述多个目标整体关系时使用 Task Group 接口；联合结果只归属 Group，不会覆盖
 任一单目标 Task。
 
@@ -317,7 +339,7 @@ python -m annotation_service.review.backfill
 
 `review/` 是系统后台功能。审核人员直接查看由工具脚本生成的自包含 PNG：图片
 上半部分叠加 target/ignore polygon，下半部分写入任务、标注人员、目标信息和全部
-3+2+1 Prompt，不需要另开 HTML 或 JSON。
+Prompt，不需要另开 HTML 或 JSON。
 
 ```bash
 set -a
@@ -338,17 +360,26 @@ python -m annotation_service.review.export_lisa \
 ```
 
 默认输出到仓库根目录
-`review_workspace/exports/ReasonSegReviewed-release/`，其中的数据集子目录包含按
-`group_id` 隔离的 `train/val/golden` 同名 `.jpg + .json`、
-`annotation_manifest.jsonl` 和构建摘要；Release 根目录包含 manifest 和
-`reasonseg.zip`。可以通过 `--output-root`、`--category`、`--task-id`、三个 split
-ratio 和 `--seed` 控制导出；脚本始终只导出 `accepted` 任务。
+`review_workspace/exports/ReasonSegReviewed-release/`。上传接口会把用户上传的原始
+图片文件名写入 Asset metadata。ZIP 中每个样本使用原始图片名（去除扩展名）作为
+目录和过程文件的前缀，其中包含 `<原图名>.jpg`、最终 ReasonSeg 标注
+`<原图名>_lisa.json`、GroundingDINO 检测框 JSON，以及存在于任务存储中的检测框
+可视化、SAM 原始 mask 和 mask overlay。文件名前缀与用途之间统一使用下划线，
+例如 `<原图名>_grounding-dino.json` 和 `<原图名>_sam-mask.png`。Release 只导出
+Job 级 GroundingDINO 候选框图，不导出旧的任务级 detection overlay。
+同名图片产生多个样本时自动追加 `_2`、`_3`，避免文件覆盖；
+不再创建
+`train/val/golden/process` 子目录，也不生成 `build_summary.json`。
+manifest 的每个 sample 都记录这些过程文件的相对路径、SHA-256 和缺失状态。
+没有对应模型产物的历史或人工任务不会伪造过程文件。可以通过 `--output-root`、
+`--category`、`--task-id`、三个 split ratio 和 `--seed` 控制导出；脚本始终只导出
+`accepted` 任务。
 
 ## F5 分步调试 DINO、SAM 和 Prompt
 
 在 VS Code 运行 `Debug Staged DINO + SAM + Prompt`。该配置只启动一个入口脚本，
 并为本次运行创建隔离的数据目录。终端依次执行三个阶段：GroundingDINO 检测并
-人工选择检测框、SAM 多框分割、Qwen 单次提取视觉事实并由服务端生成 3+2+1 Prompt。每个阶段开始前按
+人工选择检测框、SAM 多框分割、Qwen 按默认用户提示词直接生成 Prompt。每个阶段开始前按
 Enter 确认，也可以输入 `q` 停在当前阶段。三个模型 Worker 不会同时运行，日志
 也不会与图片路径或检测框选择提示混在一起。一次完成后可继续提交下一张图片，
 不需要重启调试会话。

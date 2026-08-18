@@ -63,43 +63,28 @@
         ],
         "summary": "Create Asset",
         "operationId": "createAsset",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "in": "header",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 8,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 8,
               "title": "Idempotency-Key"
-            }
+            },
+            "name": "Idempotency-Key",
+            "in": "header"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_createAsset"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -182,7 +167,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/assets/{asset_id}": {
@@ -192,23 +185,15 @@
         ],
         "summary": "Get Asset",
         "operationId": "getAsset",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "asset_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Asset Id"
-            }
+            },
+            "name": "asset_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -292,7 +277,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/assets/{asset_id}/content": {
@@ -302,23 +295,15 @@
         ],
         "summary": "Get Asset Content",
         "operationId": "getAssetContent",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "asset_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Asset Id"
-            }
+            },
+            "name": "asset_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -409,7 +394,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/jobs": {
@@ -419,43 +412,28 @@
         ],
         "summary": "Create Annotation Job",
         "operationId": "createAnnotationJob",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "in": "header",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 8,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 8,
               "title": "Idempotency-Key"
-            }
+            },
+            "name": "Idempotency-Key",
+            "in": "header"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateJobRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "202": {
@@ -528,7 +506,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/jobs/{job_id}": {
@@ -538,23 +524,15 @@
         ],
         "summary": "Get Annotation Job",
         "operationId": "getAnnotationJob",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -608,7 +586,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/jobs/{job_id}/cancel": {
@@ -618,34 +604,26 @@
         ],
         "summary": "Cancel Annotation Job",
         "operationId": "cancelAnnotationJob",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CancelJobRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -708,7 +686,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/jobs/{job_id}/detections": {
@@ -718,41 +704,26 @@
         ],
         "summary": "List Annotation Job Detections",
         "operationId": "listAnnotationJobDetections",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "path"
           },
           {
-            "name": "asset_id",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
               "title": "Asset Id"
-            }
+            },
+            "name": "asset_id",
+            "in": "query"
           }
         ],
         "responses": {
@@ -806,7 +777,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/jobs/{job_id}/review-tasks": {
@@ -816,34 +795,26 @@
         ],
         "summary": "Build Detection Tasks",
         "operationId": "buildDetectionReviewTasks",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BuildDetectionTasksRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -906,16 +877,7 @@
               }
             }
           }
-        }
-      }
-    },
-    "/v1/annotation/task-batches/mask-candidates": {
-      "post": {
-        "tags": [
-          "Task Batches"
-        ],
-        "summary": "Create Batch Mask Candidates",
-        "operationId": "createBatchMaskCandidates",
+        },
         "security": [
           {
             "apiKeyAuth": []
@@ -923,128 +885,7 @@
           {
             "bearerAuth": []
           }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchMaskCandidatesRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "One SAM operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchOperationsAccepted"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Batch request structure is invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Storage is unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/annotation/task-batches/prompt-enrichments": {
-      "post": {
-        "tags": [
-          "Task Batches"
-        ],
-        "summary": "Create Batch Prompt Enrichments",
-        "operationId": "createBatchPromptEnrichments",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchPromptEnrichmentsRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "One Qwen operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchOperationsAccepted"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Batch request structure is invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Storage is unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorPayload"
-                }
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/v1/annotation/jobs/{job_id}/assets/{asset_id}/bbox-image": {
@@ -1054,32 +895,24 @@
         ],
         "summary": "Get Annotation Job Bbox Image",
         "operationId": "getAnnotationJobBoundingBoxImage",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "path"
           },
           {
-            "name": "asset_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Asset Id"
-            }
+            },
+            "name": "asset_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1134,7 +967,54 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/annotation/prompt-templates/default": {
+      "get": {
+        "tags": [
+          "Prompt Templates"
+        ],
+        "summary": "Get Default Prompt Template",
+        "operationId": "getDefaultQwenPromptTemplate",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultQwenPromptTemplateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks": {
@@ -1144,159 +1024,92 @@
         ],
         "summary": "List Annotation Tasks",
         "operationId": "listAnnotationTasks",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TaskStatus"
+            },
             "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
+            "in": "query"
           },
           {
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AnnotationCategory"
+            },
             "name": "category",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/AnnotationCategory"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Category"
-            }
+            "in": "query"
           },
           {
-            "name": "group_id",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 256
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 256,
               "title": "Group Id"
-            }
+            },
+            "name": "group_id",
+            "in": "query"
           },
           {
-            "name": "job_id",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
               "title": "Job Id"
-            }
+            },
+            "name": "job_id",
+            "in": "query"
           },
           {
-            "name": "annotator_id",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
               "title": "Annotator Id"
-            }
+            },
+            "name": "annotator_id",
+            "in": "query"
           },
           {
-            "name": "reviewer_id",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
               "title": "Reviewer Id"
-            }
+            },
+            "name": "reviewer_id",
+            "in": "query"
           },
           {
-            "name": "bad_case_type",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/BadCaseType"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Bad Case Type"
-            }
+              "$ref": "#/components/schemas/BadCaseType"
+            },
+            "name": "bad_case_type",
+            "in": "query"
           },
           {
-            "name": "limit",
-            "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
+              "maximum": 200.0,
+              "minimum": 1.0,
+              "title": "Limit",
+              "default": 50
+            },
+            "name": "limit",
+            "in": "query"
           },
           {
-            "name": "cursor",
-            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "minLength": 1,
               "title": "Cursor"
-            }
+            },
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1340,7 +1153,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}": {
@@ -1350,23 +1171,15 @@
         ],
         "summary": "Get Annotation Task",
         "operationId": "getAnnotationTask",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1420,7 +1233,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/versions": {
@@ -1430,23 +1251,15 @@
         ],
         "summary": "List Annotation Task Versions",
         "operationId": "listAnnotationTaskVersions",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1500,7 +1313,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/reviews": {
@@ -1510,23 +1331,15 @@
         ],
         "summary": "List Annotation Task Reviews",
         "operationId": "listAnnotationTaskReviews",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1580,7 +1393,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/draft": {
@@ -1590,34 +1411,26 @@
         ],
         "summary": "Save Annotation Draft",
         "operationId": "saveAnnotationDraft",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SaveDraftRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1680,7 +1493,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/submit": {
@@ -1690,34 +1511,26 @@
         ],
         "summary": "Submit Annotation Task",
         "operationId": "submitAnnotationTask",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SubmitTaskRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1780,7 +1593,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/invalidate": {
@@ -1790,34 +1611,26 @@
         ],
         "summary": "Invalidate Annotation Task",
         "operationId": "invalidateAnnotationTask",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/InvalidateTaskRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1880,7 +1693,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/review": {
@@ -1890,34 +1711,26 @@
         ],
         "summary": "Review Annotation Task",
         "operationId": "reviewAnnotationTask",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ReviewTaskRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1980,7 +1793,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/mask-candidates": {
@@ -1990,34 +1811,26 @@
         ],
         "summary": "Create Mask Candidate",
         "operationId": "createMaskCandidate",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateMaskCandidateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "202": {
@@ -2080,7 +1893,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/prompt-enrichments": {
@@ -2090,38 +1911,30 @@
         ],
         "summary": "Create Prompt Enrichment",
         "operationId": "createPromptEnrichment",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreatePromptEnrichmentRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "202": {
-            "description": "Qwen2.5-VL prompt generation operation accepted.",
+            "description": "Qwen3-VL prompt generation operation accepted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2180,7 +1993,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/tasks/{task_id}/artifacts/{artifact_type}": {
@@ -2190,38 +2011,30 @@
         ],
         "summary": "Get Task Artifact",
         "operationId": "getTaskArtifact",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Id"
-            }
+            },
+            "name": "task_id",
+            "in": "path"
           },
           {
-            "name": "artifact_type",
-            "in": "path",
             "required": true,
             "schema": {
+              "type": "string",
               "enum": [
                 "detections",
                 "mask",
                 "mask-overlay",
                 "crop"
               ],
-              "type": "string",
               "title": "Artifact Type"
-            }
+            },
+            "name": "artifact_type",
+            "in": "path"
           }
         ],
         "responses": {
@@ -2282,7 +2095,153 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/annotation/task-batches/mask-candidates": {
+      "post": {
+        "tags": [
+          "Task Batches"
+        ],
+        "summary": "Create Batch Mask Candidates",
+        "operationId": "createBatchMaskCandidates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchMaskCandidatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "One SAM operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationsAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Batch request structure is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/annotation/task-batches/prompt-enrichments": {
+      "post": {
+        "tags": [
+          "Task Batches"
+        ],
+        "summary": "Create Batch Prompt Enrichments",
+        "operationId": "createBatchPromptEnrichments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPromptEnrichmentsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "One Qwen operation is accepted per valid Task. Rejected items do not prevent other Tasks from being queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationsAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Batch request structure is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/task-groups/prompt-enrichments": {
@@ -2344,7 +2303,7 @@
             }
           },
           "422": {
-            "description": "Tasks are invalid, use different images, or lack mask/crop artifacts.",
+            "description": "Tasks are invalid, use different images, or lack a selected optional image artifact.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2381,23 +2340,15 @@
         ],
         "summary": "Get Annotation Task Group",
         "operationId": "getAnnotationTaskGroup",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "task_group_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Task Group Id"
-            }
+            },
+            "name": "task_group_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -2442,7 +2393,7 @@
             }
           },
           "422": {
-            "description": "Tasks are invalid, use different images, or lack mask/crop artifacts.",
+            "description": "Tasks are invalid, use different images, or lack a selected optional image artifact.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2461,7 +2412,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/operations/{operation_id}": {
@@ -2471,23 +2430,15 @@
         ],
         "summary": "Get Annotation Operation",
         "operationId": "getAnnotationOperation",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "operation_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Operation Id"
-            }
+            },
+            "name": "operation_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -2541,7 +2492,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/operations/{operation_id}/cancel": {
@@ -2551,34 +2510,26 @@
         ],
         "summary": "Cancel Annotation Operation",
         "operationId": "cancelAnnotationOperation",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "operation_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Operation Id"
-            }
+            },
+            "name": "operation_id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CancelOperationRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2641,7 +2592,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/releases": {
@@ -2651,43 +2610,28 @@
         ],
         "summary": "Create Annotation Release",
         "operationId": "createAnnotationRelease",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "in": "header",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 8,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 8,
               "title": "Idempotency-Key"
-            }
+            },
+            "name": "Idempotency-Key",
+            "in": "header"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateReleaseRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "202": {
@@ -2750,7 +2694,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/releases/{release_id}": {
@@ -2760,23 +2712,15 @@
         ],
         "summary": "Get Annotation Release",
         "operationId": "getAnnotationRelease",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "release_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Release Id"
-            }
+            },
+            "name": "release_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -2830,7 +2774,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/releases/{release_id}/manifest": {
@@ -2840,23 +2792,15 @@
         ],
         "summary": "Get Annotation Release Manifest",
         "operationId": "getAnnotationReleaseManifest",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "release_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Release Id"
-            }
+            },
+            "name": "release_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -2913,7 +2857,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/annotation/releases/{release_id}/archive": {
@@ -2923,23 +2875,15 @@
         ],
         "summary": "Get Annotation Release Archive",
         "operationId": "getAnnotationReleaseArchive",
-        "security": [
-          {
-            "apiKeyAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
         "parameters": [
           {
-            "name": "release_id",
-            "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "title": "Release Id"
-            }
+            },
+            "name": "release_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -3004,7 +2948,115 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/annotation/export": {
+      "get": {
+        "tags": [
+          "Exports"
+        ],
+        "summary": "Export Submitted Annotations",
+        "operationId": "exportSubmittedAnnotations",
+        "parameters": [
+          {
+            "description": "Inclusive submission time lower bound (ISO 8601).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Start Time",
+              "description": "Inclusive submission time lower bound (ISO 8601)."
+            },
+            "name": "start_time",
+            "in": "query"
+          },
+          {
+            "description": "Inclusive submission time upper bound (ISO 8601).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "End Time",
+              "description": "Inclusive submission time upper bound (ISO 8601)."
+            },
+            "name": "end_time",
+            "in": "query"
+          },
+          {
+            "description": "Optional task IDs; repeat the parameter to select several.",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "title": "Task Id",
+              "description": "Optional task IDs; repeat the parameter to select several."
+            },
+            "name": "task_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP containing submitted annotation samples.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The time range is invalid or no samples matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     }
   },
@@ -3024,7 +3076,8 @@
           "safe",
           "unsafe"
         ],
-        "title": "AnnotationCategory"
+        "title": "AnnotationCategory",
+        "description": "An enumeration."
       },
       "AnnotationContent": {
         "properties": {
@@ -3052,15 +3105,8 @@
             "title": "Mask Granularity"
           },
           "risk_semantics": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 500,
             "title": "Risk Semantics"
           },
           "shapes": {
@@ -3075,7 +3121,7 @@
               "$ref": "#/components/schemas/AnnotationPrompt"
             },
             "type": "array",
-            "maxItems": 6,
+            "maxItems": 50,
             "title": "Prompts"
           }
         },
@@ -3098,63 +3144,27 @@
             "$ref": "#/components/schemas/OperationType"
           },
           "task_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Task Id"
           },
           "task_version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
+            "minimum": 1.0,
             "title": "Task Version"
           },
           "task_group_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Task Group Id"
           },
           "status": {
             "$ref": "#/components/schemas/OperationStatus"
           },
           "result": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "object",
             "title": "Result"
           },
           "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorPayload"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ErrorPayload"
           },
           "created_at": {
             "type": "string",
@@ -3162,27 +3172,13 @@
             "title": "Created At"
           },
           "started_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Started At"
           },
           "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Completed At"
           }
         },
@@ -3207,7 +3203,7 @@
           },
           "text": {
             "type": "string",
-            "maxLength": 200,
+            "maxLength": 1000,
             "minLength": 1,
             "title": "Text"
           }
@@ -3262,14 +3258,7 @@
             "$ref": "#/components/schemas/Provenance"
           },
           "source_detection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Source Detection Id"
           },
           "source_detection_ids": {
@@ -3280,14 +3269,7 @@
             "title": "Source Detection Ids"
           },
           "source_hazard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HazardCandidate"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/HazardCandidate"
           },
           "warnings": {
             "items": {
@@ -3297,35 +3279,14 @@
             "title": "Warnings"
           },
           "primary_result": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BadCaseType"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/BadCaseType"
           },
           "annotator_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Annotator Id"
           },
           "reviewer_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Reviewer Id"
           },
           "created_at": {
@@ -3358,47 +3319,19 @@
       "ArtifactLinks": {
         "properties": {
           "detection_overlay_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Detection Overlay Url"
           },
           "mask_overlay_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Mask Overlay Url"
           },
           "mask_png_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Mask Png Url"
           },
           "crop_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Crop Url"
           }
         },
@@ -3413,14 +3346,7 @@
             "title": "Asset Id"
           },
           "source_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Source Id"
           },
           "group_id": {
@@ -3454,18 +3380,10 @@
             "title": "Content Url"
           },
           "duplicate_of": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Duplicate Of"
           },
           "metadata": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Metadata"
           },
@@ -3488,6 +3406,26 @@
           "created_at"
         ],
         "title": "Asset"
+      },
+      "BadCaseType": {
+        "type": "string",
+        "enum": [
+          "prompt_ok",
+          "prompt_rewritten",
+          "prompt_mask_mismatch",
+          "mask_overflow",
+          "mask_missing",
+          "instance_ambiguous",
+          "target_unrecognizable",
+          "dino_false_positive",
+          "dino_false_negative",
+          "hazard_rule_error",
+          "qwen_visual_hallucination",
+          "qwen_prompt_semantic_drift",
+          "other"
+        ],
+        "title": "BadCaseType",
+        "description": "An enumeration."
       },
       "BatchMaskCandidateItem": {
         "properties": {
@@ -3545,14 +3483,7 @@
             "title": "Task Id"
           },
           "operation_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Operation Id"
           },
           "status": {
@@ -3565,26 +3496,12 @@
             "title": "Status"
           },
           "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorPayload"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ErrorPayload"
           }
         },
         "additionalProperties": false,
@@ -3635,6 +3552,23 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Expected Version"
+          },
+          "custom_instruction": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Custom Instruction",
+            "description": "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+          },
+          "include_mask": {
+            "type": "boolean",
+            "title": "Include Mask",
+            "default": false
+          },
+          "include_crop": {
+            "type": "boolean",
+            "title": "Include Crop",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -3664,30 +3598,11 @@
         ],
         "title": "BatchPromptEnrichmentsRequest"
       },
-      "BadCaseType": {
-        "type": "string",
-        "enum": [
-          "prompt_ok",
-          "prompt_rewritten",
-          "prompt_mask_mismatch",
-          "mask_overflow",
-          "mask_missing",
-          "instance_ambiguous",
-          "target_unrecognizable",
-          "dino_false_positive",
-          "dino_false_negative",
-          "hazard_rule_error",
-          "qwen_visual_hallucination",
-          "qwen_prompt_semantic_drift",
-          "other"
-        ],
-        "title": "BadCaseType"
-      },
       "Body_createAsset": {
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           },
           "group_id": {
@@ -3697,27 +3612,13 @@
             "title": "Group Id"
           },
           "source_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 256
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 256,
             "title": "Source Id"
           },
           "metadata_json": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 16384
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 16384,
             "title": "Metadata Json"
           }
         },
@@ -3731,23 +3632,20 @@
       "BuildDetectionTasksRequest": {
         "properties": {
           "detection_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 500,
-                "minItems": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
             "title": "Detection Ids"
           },
           "category": {
-            "$ref": "#/components/schemas/AnnotationCategory",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnnotationCategory"
+              }
+            ],
             "default": "unsafe"
           }
         },
@@ -3930,7 +3828,9 @@
               "items": {
                 "type": "number"
               },
-              "type": "array"
+              "type": "array",
+              "maxItems": 128,
+              "minItems": 1
             },
             "type": "array",
             "maxItems": 128,
@@ -3958,6 +3858,23 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Expected Version"
+          },
+          "custom_instruction": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Custom Instruction",
+            "description": "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+          },
+          "include_mask": {
+            "type": "boolean",
+            "title": "Include Mask",
+            "default": false
+          },
+          "include_crop": {
+            "type": "boolean",
+            "title": "Include Crop",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -3988,6 +3905,36 @@
           "split_policy"
         ],
         "title": "CreateReleaseRequest"
+      },
+      "DefaultQwenPromptTemplateResponse": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "enum": [
+              "qwen-default-v1"
+            ],
+            "title": "Template Id",
+            "default": "qwen-default-v1"
+          },
+          "template": {
+            "type": "string",
+            "title": "Template"
+          },
+          "context_placeholder": {
+            "type": "string",
+            "enum": [
+              "{{candidate_context_json}}"
+            ],
+            "title": "Context Placeholder",
+            "default": "{{candidate_context_json}}"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "DefaultQwenPromptTemplateResponse"
       },
       "Detection": {
         "properties": {
@@ -4030,6 +3977,27 @@
         ],
         "title": "Detection"
       },
+      "DetectionJobProgress": {
+        "properties": {
+          "total_assets": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Assets"
+          },
+          "completed_assets": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed Assets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_assets",
+          "completed_assets"
+        ],
+        "title": "DetectionJobProgress"
+      },
       "DetectionOverlapWarning": {
         "properties": {
           "detection_ids": {
@@ -4061,27 +4029,6 @@
         ],
         "title": "DetectionOverlapWarning"
       },
-      "DetectionJobProgress": {
-        "properties": {
-          "total_assets": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Total Assets"
-          },
-          "completed_assets": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Completed Assets"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "total_assets",
-          "completed_assets"
-        ],
-        "title": "DetectionJobProgress"
-      },
       "ErrorCode": {
         "type": "string",
         "enum": [
@@ -4100,19 +4047,13 @@
           "downstream_unavailable",
           "internal_error"
         ],
-        "title": "ErrorCode"
+        "title": "ErrorCode",
+        "description": "An enumeration."
       },
       "ErrorDetail": {
         "properties": {
           "field": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Field"
           },
           "reason": {
@@ -4130,14 +4071,7 @@
       "ErrorPayload": {
         "properties": {
           "request_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Request Id"
           },
           "code": {
@@ -4162,6 +4096,40 @@
           "message"
         ],
         "title": "ErrorPayload"
+      },
+      "GroundingPromptRoute": {
+        "properties": {
+          "rule_attempted": {
+            "type": "boolean",
+            "title": "Rule Attempted"
+          },
+          "rule_matched": {
+            "type": "boolean",
+            "title": "Rule Matched"
+          },
+          "llm_attempted": {
+            "type": "boolean",
+            "title": "Llm Attempted"
+          },
+          "llm_succeeded": {
+            "type": "boolean",
+            "title": "Llm Succeeded"
+          },
+          "fallback_used": {
+            "type": "boolean",
+            "title": "Fallback Used"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_attempted",
+          "rule_matched",
+          "llm_attempted",
+          "llm_succeeded",
+          "fallback_used"
+        ],
+        "title": "GroundingPromptRoute"
       },
       "HTTPValidationError": {
         "properties": {
@@ -4231,7 +4199,6 @@
             "title": "Evidence"
           },
           "metadata": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Metadata"
           },
@@ -4258,59 +4225,27 @@
         ],
         "title": "HazardCandidate"
       },
-      "GroundingPromptRoute": {
+      "HealthResponse": {
         "properties": {
-          "rule_attempted": {
-            "type": "boolean",
-            "title": "Rule Attempted"
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ],
+            "title": "Status",
+            "default": "ok"
           },
-          "rule_matched": {
-            "type": "boolean",
-            "title": "Rule Matched"
-          },
-          "llm_attempted": {
-            "type": "boolean",
-            "title": "Llm Attempted"
-          },
-          "llm_succeeded": {
-            "type": "boolean",
-            "title": "Llm Succeeded"
-          },
-          "fallback_used": {
-            "type": "boolean",
-            "title": "Fallback Used"
+          "version": {
+            "type": "string",
+            "title": "Version"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "rule_attempted",
-          "rule_matched",
-          "llm_attempted",
-          "llm_succeeded",
-          "fallback_used"
+          "version"
         ],
-        "title": "GroundingPromptRoute"
-      },
-    "HealthResponse": {
-      "properties": {
-        "status": {
-          "type": "string",
-          "const": "ok",
-          "title": "Status",
-          "default": "ok"
-        },
-        "version": {
-          "type": "string",
-          "title": "Version"
-        }
-      },
-      "required": [
-        "version"
-      ],
-      "additionalProperties": false,
-      "type": "object",
-      "title": "HealthResponse"
+        "title": "HealthResponse"
       },
       "InvalidateTaskRequest": {
         "properties": {
@@ -4351,14 +4286,9 @@
             "$ref": "#/components/schemas/JobStatus"
           },
           "stage": {
-            "anyOf": [
-              {
-                "type": "string",
-                "const": "grounding_dino"
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "grounding_dino"
             ],
             "title": "Stage"
           },
@@ -4401,14 +4331,7 @@
             "default": "fallback_canonical_terms"
           },
           "grounding_prompt_route": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GroundingPromptRoute"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/GroundingPromptRoute"
           },
           "progress": {
             "$ref": "#/components/schemas/DetectionJobProgress"
@@ -4416,9 +4339,6 @@
           "stages": {
             "additionalProperties": {
               "$ref": "#/components/schemas/StageResult"
-            },
-            "propertyNames": {
-              "const": "grounding_dino"
             },
             "type": "object",
             "title": "Stages"
@@ -4436,27 +4356,13 @@
             "title": "Created At"
           },
           "started_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Started At"
           },
           "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Completed At"
           }
         },
@@ -4507,7 +4413,6 @@
             "title": "Asset Id"
           },
           "metadata": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Metadata"
           },
@@ -4560,25 +4465,13 @@
       "JobError": {
         "properties": {
           "asset_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Asset Id"
           },
           "stage": {
-            "anyOf": [
-              {
-                "type": "string",
-                "const": "grounding_dino"
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "grounding_dino"
             ],
             "title": "Stage"
           },
@@ -4609,7 +4502,8 @@
           "failed",
           "cancelled"
         ],
-        "title": "JobStatus"
+        "title": "JobStatus",
+        "description": "An enumeration."
       },
       "JointPromptEnrichmentRequest": {
         "properties": {
@@ -4624,9 +4518,28 @@
           },
           "mode": {
             "type": "string",
-            "const": "joint",
+            "enum": [
+              "joint"
+            ],
             "title": "Mode",
             "default": "joint"
+          },
+          "custom_instruction": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Custom Instruction",
+            "description": "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+          },
+          "include_mask": {
+            "type": "boolean",
+            "title": "Include Mask",
+            "default": false
+          },
+          "include_crop": {
+            "type": "boolean",
+            "title": "Include Crop",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -4635,6 +4548,694 @@
           "items"
         ],
         "title": "JointPromptEnrichmentRequest"
+      },
+      "OperationAccepted": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running"
+            ],
+            "title": "Status",
+            "default": "queued"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id",
+          "created_at"
+        ],
+        "title": "OperationAccepted"
+      },
+      "OperationStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "OperationStatus",
+        "description": "An enumeration."
+      },
+      "OperationType": {
+        "type": "string",
+        "enum": [
+          "mask_candidate",
+          "prompt_enrichment",
+          "joint_prompt_enrichment"
+        ],
+        "title": "OperationType",
+        "description": "An enumeration."
+      },
+      "PolygonShape": {
+        "properties": {
+          "shape_id": {
+            "type": "string",
+            "title": "Shape Id"
+          },
+          "label": {
+            "$ref": "#/components/schemas/ShapeLabel"
+          },
+          "shape_type": {
+            "type": "string",
+            "enum": [
+              "polygon"
+            ],
+            "title": "Shape Type",
+            "default": "polygon"
+          },
+          "points": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "source_detection_id": {
+            "type": "string",
+            "title": "Source Detection Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shape_id",
+          "label",
+          "points"
+        ],
+        "title": "PolygonShape"
+      },
+      "PromptType": {
+        "type": "string",
+        "enum": [
+          "visual",
+          "risk",
+          "agent"
+        ],
+        "title": "PromptType",
+        "description": "An enumeration."
+      },
+      "Provenance": {
+        "properties": {
+          "pipeline_version": {
+            "type": "string",
+            "title": "Pipeline Version"
+          },
+          "source_detection_id": {
+            "type": "string",
+            "title": "Source Detection Id"
+          },
+          "source_detection_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Detection Ids"
+          },
+          "grounding_prompt": {
+            "type": "string",
+            "title": "Grounding Prompt"
+          },
+          "hazard_candidate_id": {
+            "type": "string",
+            "title": "Hazard Candidate Id"
+          },
+          "review_task_builder_version": {
+            "type": "string",
+            "title": "Review Task Builder Version"
+          },
+          "grounding_dino_version": {
+            "type": "string",
+            "title": "Grounding Dino Version"
+          },
+          "grounding_dino_prompt_version": {
+            "type": "string",
+            "title": "Grounding Dino Prompt Version"
+          },
+          "grounding_dino_thresholds": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Grounding Dino Thresholds"
+          },
+          "hazard_rule_version": {
+            "type": "string",
+            "title": "Hazard Rule Version"
+          },
+          "sam_version": {
+            "type": "string",
+            "title": "Sam Version"
+          },
+          "sam_qc_version": {
+            "type": "string",
+            "title": "Sam Qc Version"
+          },
+          "qwen_provider": {
+            "type": "string",
+            "title": "Qwen Provider"
+          },
+          "qwen_model": {
+            "type": "string",
+            "title": "Qwen Model"
+          },
+          "qwen_facts_prompt_version": {
+            "type": "string",
+            "title": "Qwen Facts Prompt Version"
+          },
+          "qwen_enrichment_prompt_version": {
+            "type": "string",
+            "title": "Qwen Enrichment Prompt Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pipeline_version"
+        ],
+        "title": "Provenance"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status"
+          },
+          "dependencies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Dependencies"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReadinessResponse"
+      },
+      "Release": {
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "title": "Release Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReleaseStatus"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ReleaseCounts"
+          },
+          "manifest_url": {
+            "type": "string",
+            "title": "Manifest Url"
+          },
+          "archive_url": {
+            "type": "string",
+            "title": "Archive Url"
+          },
+          "error": {
+            "type": "string",
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "release_id",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "Release"
+      },
+      "ReleaseCounts": {
+        "properties": {
+          "train": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Train"
+          },
+          "val": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Val"
+          },
+          "golden": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Golden"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "train",
+          "val",
+          "golden"
+        ],
+        "title": "ReleaseCounts"
+      },
+      "ReleaseStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "building",
+          "succeeded",
+          "failed"
+        ],
+        "title": "ReleaseStatus",
+        "description": "An enumeration."
+      },
+      "ReleaseTaskFilter": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ],
+            "title": "Status",
+            "default": "accepted"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationCategory"
+            },
+            "type": "array",
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReleaseTaskFilter"
+      },
+      "ReviewDecision": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "request_changes",
+          "needs_expert",
+          "reject"
+        ],
+        "title": "ReviewDecision",
+        "description": "An enumeration."
+      },
+      "ReviewList": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewRecord"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "title": "ReviewList"
+      },
+      "ReviewRecord": {
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "title": "Review Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Task Version"
+          },
+          "reviewer_id": {
+            "type": "string",
+            "title": "Reviewer Id"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ReviewDecision"
+          },
+          "primary_result": {
+            "$ref": "#/components/schemas/BadCaseType"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "review_id",
+          "task_id",
+          "task_version",
+          "reviewer_id",
+          "decision",
+          "primary_result",
+          "created_at"
+        ],
+        "title": "ReviewRecord"
+      },
+      "ReviewTaskBuildItem": {
+        "properties": {
+          "detection_id": {
+            "type": "string",
+            "title": "Detection Id"
+          },
+          "detection_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Detection Ids"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Task Version"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "box_xyxy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Box Xyxy"
+          },
+          "boxes_xyxy": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array",
+              "minItems": 1
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Boxes Xyxy"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detection_id",
+          "detection_ids",
+          "task_id",
+          "task_version",
+          "asset_id",
+          "box_xyxy",
+          "boxes_xyxy",
+          "created"
+        ],
+        "title": "ReviewTaskBuildItem"
+      },
+      "ReviewTaskRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "reviewer_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Reviewer Id"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ReviewDecision"
+          },
+          "primary_result": {
+            "$ref": "#/components/schemas/BadCaseType"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "reviewer_id",
+          "decision",
+          "primary_result"
+        ],
+        "title": "ReviewTaskRequest"
+      },
+      "SaveDraftRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationContent"
+          },
+          "editor_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Editor Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "annotation",
+          "editor_id"
+        ],
+        "title": "SaveDraftRequest"
+      },
+      "ShapeLabel": {
+        "type": "string",
+        "enum": [
+          "target",
+          "ignore"
+        ],
+        "title": "ShapeLabel",
+        "description": "An enumeration."
+      },
+      "SplitPolicy": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "grouped"
+            ],
+            "title": "Type",
+            "default": "grouped"
+          },
+          "group_field": {
+            "type": "string",
+            "enum": [
+              "group_id"
+            ],
+            "title": "Group Field",
+            "default": "group_id"
+          },
+          "train_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Train Ratio"
+          },
+          "val_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Val Ratio"
+          },
+          "golden_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Golden Ratio"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "train_ratio",
+          "val_ratio",
+          "golden_ratio",
+          "seed"
+        ],
+        "title": "SplitPolicy"
+      },
+      "StageResult": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/StageStatus"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "StageResult"
+      },
+      "StageStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "StageStatus",
+        "description": "An enumeration."
+      },
+      "SubmitTaskRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "annotator_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Annotator Id"
+          },
+          "primary_result": {
+            "$ref": "#/components/schemas/BadCaseType"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "annotator_id",
+          "primary_result"
+        ],
+        "title": "SubmitTaskRequest"
+      },
+      "TaskAsset": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "group_id": {
+            "type": "string",
+            "title": "Group Id"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Height"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "group_id",
+          "width",
+          "height",
+          "image_url"
+        ],
+        "title": "TaskAsset"
       },
       "TaskGroup": {
         "properties": {
@@ -4648,7 +5249,9 @@
           },
           "mode": {
             "type": "string",
-            "const": "joint",
+            "enum": [
+              "joint"
+            ],
             "title": "Mode",
             "default": "joint"
           },
@@ -4678,15 +5281,7 @@
             "$ref": "#/components/schemas/OperationStatus"
           },
           "facts": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "object",
             "title": "Facts"
           },
           "prompts": {
@@ -4697,26 +5292,11 @@
             "title": "Prompts"
           },
           "provenance": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "object",
             "title": "Provenance"
           },
           "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorPayload"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ErrorPayload"
           },
           "created_at": {
             "type": "string",
@@ -4724,27 +5304,13 @@
             "title": "Created At"
           },
           "started_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Started At"
           },
           "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Completed At"
           }
         },
@@ -4815,861 +5381,6 @@
         ],
         "title": "TaskGroupOperationAccepted"
       },
-      "OperationAccepted": {
-        "properties": {
-          "operation_id": {
-            "type": "string",
-            "title": "Operation Id"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "running"
-            ],
-            "title": "Status",
-            "default": "queued"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "operation_id",
-          "created_at"
-        ],
-        "title": "OperationAccepted"
-      },
-      "OperationStatus": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "running",
-          "succeeded",
-          "failed",
-          "cancelled"
-        ],
-        "title": "OperationStatus"
-      },
-      "OperationType": {
-        "type": "string",
-        "enum": [
-          "mask_candidate",
-          "prompt_enrichment",
-          "joint_prompt_enrichment"
-        ],
-        "title": "OperationType"
-      },
-      "PolygonShape": {
-        "properties": {
-          "shape_id": {
-            "type": "string",
-            "title": "Shape Id"
-          },
-          "label": {
-            "$ref": "#/components/schemas/ShapeLabel"
-          },
-          "shape_type": {
-            "type": "string",
-            "const": "polygon",
-            "title": "Shape Type",
-            "default": "polygon"
-          },
-          "points": {
-            "items": {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            "type": "array",
-            "title": "Points"
-          },
-          "source_detection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Detection Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "shape_id",
-          "label",
-          "points"
-        ],
-        "title": "PolygonShape"
-      },
-      "PromptType": {
-        "type": "string",
-        "enum": [
-          "visual",
-          "risk",
-          "agent"
-        ],
-        "title": "PromptType"
-      },
-      "Provenance": {
-        "properties": {
-          "pipeline_version": {
-            "type": "string",
-            "title": "Pipeline Version"
-          },
-          "source_detection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Detection Id"
-          },
-          "source_detection_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Source Detection Ids"
-          },
-          "grounding_prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grounding Prompt"
-          },
-          "hazard_candidate_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hazard Candidate Id"
-          },
-          "review_task_builder_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Review Task Builder Version"
-          },
-          "grounding_dino_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grounding Dino Version"
-          },
-          "grounding_dino_prompt_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grounding Dino Prompt Version"
-          },
-          "grounding_dino_thresholds": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Grounding Dino Thresholds"
-          },
-          "hazard_rule_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hazard Rule Version"
-          },
-          "sam_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sam Version"
-          },
-          "sam_qc_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sam Qc Version"
-          },
-          "qwen_provider": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qwen Provider"
-          },
-          "qwen_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qwen Model"
-          },
-          "qwen_facts_prompt_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qwen Facts Prompt Version"
-          },
-          "qwen_enrichment_prompt_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qwen Enrichment Prompt Version"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "pipeline_version"
-        ],
-        "title": "Provenance"
-      },
-      "ReadinessResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "ready",
-              "not_ready"
-            ],
-            "title": "Status"
-          },
-          "dependencies": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Dependencies"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "ReadinessResponse"
-      },
-      "Release": {
-        "properties": {
-          "release_id": {
-            "type": "string",
-            "title": "Release Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ReleaseStatus"
-          },
-          "counts": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ReleaseCounts"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "manifest_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Manifest Url"
-          },
-          "archive_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Archive Url"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "release_id",
-          "name",
-          "status",
-          "created_at"
-        ],
-        "title": "Release"
-      },
-      "ReleaseCounts": {
-        "properties": {
-          "train": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Train"
-          },
-          "val": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Val"
-          },
-          "golden": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Golden"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "train",
-          "val",
-          "golden"
-        ],
-        "title": "ReleaseCounts"
-      },
-      "ReleaseStatus": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "building",
-          "succeeded",
-          "failed"
-        ],
-        "title": "ReleaseStatus"
-      },
-      "ReleaseTaskFilter": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "const": "accepted",
-            "title": "Status",
-            "default": "accepted"
-          },
-          "categories": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/AnnotationCategory"
-                },
-                "type": "array",
-                "minItems": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Categories"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "ReleaseTaskFilter"
-      },
-      "ReviewDecision": {
-        "type": "string",
-        "enum": [
-          "accept",
-          "request_changes",
-          "needs_expert",
-          "reject"
-        ],
-        "title": "ReviewDecision"
-      },
-      "ReviewList": {
-        "properties": {
-          "task_id": {
-            "type": "string",
-            "title": "Task Id"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ReviewRecord"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "task_id"
-        ],
-        "title": "ReviewList"
-      },
-      "ReviewRecord": {
-        "properties": {
-          "review_id": {
-            "type": "string",
-            "title": "Review Id"
-          },
-          "task_id": {
-            "type": "string",
-            "title": "Task Id"
-          },
-          "task_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Task Version"
-          },
-          "reviewer_id": {
-            "type": "string",
-            "title": "Reviewer Id"
-          },
-          "decision": {
-            "$ref": "#/components/schemas/ReviewDecision"
-          },
-          "primary_result": {
-            "$ref": "#/components/schemas/BadCaseType"
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "review_id",
-          "task_id",
-          "task_version",
-          "reviewer_id",
-          "decision",
-          "primary_result",
-          "created_at"
-        ],
-        "title": "ReviewRecord"
-      },
-      "ReviewTaskBuildItem": {
-        "properties": {
-          "detection_id": {
-            "type": "string",
-            "title": "Detection Id"
-          },
-          "detection_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Detection Ids"
-          },
-          "task_id": {
-            "type": "string",
-            "title": "Task Id"
-          },
-          "task_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Task Version"
-          },
-          "asset_id": {
-            "type": "string",
-            "title": "Asset Id"
-          },
-          "box_xyxy": {
-            "items": {
-              "type": "number"
-            },
-            "type": "array",
-            "title": "Box Xyxy"
-          },
-          "boxes_xyxy": {
-            "items": {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Boxes Xyxy"
-          },
-          "created": {
-            "type": "boolean",
-            "title": "Created"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "detection_id",
-          "detection_ids",
-          "task_id",
-          "task_version",
-          "asset_id",
-          "box_xyxy",
-          "boxes_xyxy",
-          "created"
-        ],
-        "title": "ReviewTaskBuildItem"
-      },
-      "ReviewTaskRequest": {
-        "properties": {
-          "expected_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Expected Version"
-          },
-          "reviewer_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Reviewer Id"
-          },
-          "decision": {
-            "$ref": "#/components/schemas/ReviewDecision"
-          },
-          "primary_result": {
-            "$ref": "#/components/schemas/BadCaseType"
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "expected_version",
-          "reviewer_id",
-          "decision",
-          "primary_result"
-        ],
-        "title": "ReviewTaskRequest"
-      },
-      "SaveDraftRequest": {
-        "properties": {
-          "expected_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Expected Version"
-          },
-          "annotation": {
-            "$ref": "#/components/schemas/AnnotationContent"
-          },
-          "editor_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Editor Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "expected_version",
-          "annotation",
-          "editor_id"
-        ],
-        "title": "SaveDraftRequest"
-      },
-      "ShapeLabel": {
-        "type": "string",
-        "enum": [
-          "target",
-          "ignore"
-        ],
-        "title": "ShapeLabel"
-      },
-      "SplitPolicy": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "grouped",
-            "title": "Type",
-            "default": "grouped"
-          },
-          "group_field": {
-            "type": "string",
-            "const": "group_id",
-            "title": "Group Field",
-            "default": "group_id"
-          },
-          "train_ratio": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Train Ratio"
-          },
-          "val_ratio": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Val Ratio"
-          },
-          "golden_ratio": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Golden Ratio"
-          },
-          "seed": {
-            "type": "integer",
-            "title": "Seed"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "train_ratio",
-          "val_ratio",
-          "golden_ratio",
-          "seed"
-        ],
-        "title": "SplitPolicy"
-      },
-      "StageResult": {
-        "properties": {
-          "status": {
-            "$ref": "#/components/schemas/StageStatus"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "StageResult"
-      },
-      "StageStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "running",
-          "succeeded",
-          "failed",
-          "skipped"
-        ],
-        "title": "StageStatus"
-      },
-      "SubmitTaskRequest": {
-        "properties": {
-          "expected_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Expected Version"
-          },
-          "annotator_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Annotator Id"
-          },
-          "primary_result": {
-            "$ref": "#/components/schemas/BadCaseType"
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "expected_version",
-          "annotator_id",
-          "primary_result"
-        ],
-        "title": "SubmitTaskRequest"
-      },
-      "TaskAsset": {
-        "properties": {
-          "asset_id": {
-            "type": "string",
-            "title": "Asset Id"
-          },
-          "group_id": {
-            "type": "string",
-            "title": "Group Id"
-          },
-          "width": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Width"
-          },
-          "height": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Height"
-          },
-          "image_url": {
-            "type": "string",
-            "title": "Image Url"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "asset_id",
-          "group_id",
-          "width",
-          "height",
-          "image_url"
-        ],
-        "title": "TaskAsset"
-      },
       "TaskList": {
         "properties": {
           "items": {
@@ -5680,14 +5391,7 @@
             "title": "Items"
           },
           "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Next Cursor"
           }
         },
@@ -5707,7 +5411,8 @@
           "rejected",
           "frozen"
         ],
-        "title": "TaskStatus"
+        "title": "TaskStatus",
+        "description": "An enumeration."
       },
       "TaskSummary": {
         "properties": {
@@ -5735,14 +5440,7 @@
             "title": "Version"
           },
           "source_detection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Source Detection Id"
           },
           "source_detection_ids": {
@@ -5753,57 +5451,22 @@
             "title": "Source Detection Ids"
           },
           "source_hazard_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Source Hazard Id"
           },
           "primary_result": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BadCaseType"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/BadCaseType"
           },
           "annotator_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Annotator Id"
           },
           "reviewer_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Reviewer Id"
           },
           "thumbnail_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Thumbnail Url"
           },
           "created_at": {
@@ -5866,14 +5529,7 @@
             "$ref": "#/components/schemas/TaskStatus"
           },
           "editor_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Editor Id"
           },
           "change_kind": {
@@ -5889,14 +5545,7 @@
             "title": "Change Kind"
           },
           "comment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Comment"
           },
           "created_at": {
@@ -5939,13 +5588,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

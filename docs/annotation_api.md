@@ -61,7 +61,7 @@ Authorization: Bearer <TEST_API_KEY>
 9. 轮询 Operation，Spring/前端选择 Prompt、批量换词或自定义 Prompt
 10. 将 mask polygon 和 Prompt 合并到最新 Task 并保存草稿
 11. 提交 Task，或将不应继续的 Task 作废
-12. 可选：审核通过后构建 ReasonSeg Release
+12. 按提交时间直接调用 export 接口下载 ZIP
 ```
 
 GroundingDINO、SAM 和 Qwen 都是异步执行。HTTP 202 只表示任务已入队，Spring
@@ -94,12 +94,19 @@ Task，合并用户选择后的结果，再保存 draft。
 | POST | `/v1/annotation/task-batches/prompt-enrichments` | 为多个 Task 批量请求 Prompt |
 | POST | `/v1/annotation/task-groups/prompt-enrichments` | 为同图多个目标联合生成 Prompt |
 | GET | `/v1/annotation/task-groups/{task_group_id}` | 查询联合 Prompt Task Group |
+| GET | `/v1/annotation/prompt-templates/default` | 获取 Qwen-VL 完整默认模板 |
 | POST | `/v1/annotation/tasks/{task_id}/submit` | 提交标注样本 |
 | POST | `/v1/annotation/tasks/{task_id}/invalidate` | 作废标注样本 |
-| POST | `/v1/annotation/tasks/{task_id}/review` | 审核样本 |
 | GET | `/v1/annotation/tasks/{task_id}/artifacts/{artifact_type}` | 下载图片制品 |
 | GET | `/v1/annotation/operations/{operation_id}` | 查询 SAM/Qwen Operation |
 | POST | `/v1/annotation/operations/{operation_id}/cancel` | 取消 SAM/Qwen 步骤 |
+| GET | `/v1/annotation/export` | 按提交时间或 task_id 下载最终标注 ZIP |
+
+以下 Review/Release 接口仅为旧调用方兼容保留，新流程不需要调用：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/v1/annotation/tasks/{task_id}/review` | 旧审核接口 |
 | POST | `/v1/annotation/releases` | 创建数据集 Release |
 | GET | `/v1/annotation/releases/{release_id}` | 查询 Release |
 | GET | `/v1/annotation/releases/{release_id}/manifest` | 下载 manifest |
@@ -693,6 +700,28 @@ GET /v1/annotation/tasks/{task_id}/artifacts/crop
 
 ## 10. Qwen 批量生成 Prompt
 
+### 10.0 获取默认模板
+
+```http
+GET /v1/annotation/prompt-templates/default
+Authorization: Bearer <TEST_API_KEY>
+```
+
+响应：
+
+```json
+{
+  "template_id": "qwen-default-v1",
+  "template": "你需要根据提供的图像和用户生成要求……{{candidate_context_json}}……",
+  "context_placeholder": "{{candidate_context_json}}"
+}
+```
+
+`template` 是 Qwen-VL 当前使用的完整默认文本模板。服务端在调用方省略
+`custom_instruction` 时，将 `context_placeholder` 替换成当前 Task 或 Task Group 的
+候选上下文。调用方传入自定义提示词时不会执行该占位符替换，输入仍严格为自定义
+文本原文加所选图片。
+
 ### 10.1 单目标 Prompt
 
 SAM 成功后创建 Prompt Operation：
@@ -704,7 +733,10 @@ Content-Type: application/json
 
 ```json
 {
-  "expected_version": 1
+  "expected_version": 1,
+  "custom_instruction": "观察图片并生成一条简体中文分割提示词。只返回 JSON：{\"prompts\":[{\"prompt_id\":\"prompt-1\",\"type\":\"visual\",\"text\":\"具体提示词\"}]}。",
+  "include_mask": false,
+  "include_crop": false
 }
 ```
 
@@ -724,27 +756,21 @@ Content-Type: application/json
 ```json
 {
   "items": [
-    {"task_id": "tsk_1", "expected_version": 1},
-    {"task_id": "tsk_2", "expected_version": 1}
+    {"task_id": "tsk_1", "expected_version": 1, "include_mask": false, "include_crop": false},
+    {"task_id": "tsk_2", "expected_version": 1, "custom_instruction": "观察图片并生成两条人员分割提示词，只返回符合 prompts 数组结构的 JSON。"}
   ]
 }
 ```
 
-响应结构与批量 SAM 相同，每项返回自己的 `operation_id`。尚无 SAM mask、
-Task 不存在或版本冲突的项返回 `rejected`，不影响其他 Task。
+响应结构与批量 SAM 相同，每项返回自己的 `operation_id`。原图始终提供给 Qwen；
+`include_mask`、`include_crop` 默认均为 `false`。只有显式选择某个附加输入时，
+对应制品不存在才返回 `rejected`。Task 不存在或版本冲突也会拒绝该项，不影响其他 Task。
 
 成功时 `result`：
 
 ```json
 {
-  "facts": {
-    "target_object": "画面中央靠近设备的一名作业人员",
-    "instance_count": 1,
-    "visual_anchor": ["位于画面中央", "位于蓝色设备左侧"],
-    "mask_granularity": "人员整体",
-    "visible_facts": ["画面中可见一名人员"],
-    "risk_semantics": "人员与设备距离较近"
-  },
+  "facts": null,
   "prompts": [
     {"prompt_id": "v1", "type": "visual", "text": "分割画面中央靠近蓝色设备的人员。"},
     {"prompt_id": "v2", "type": "visual", "text": "标出蓝色设备左侧的作业人员。"},
@@ -762,9 +788,34 @@ Task 不存在或版本冲突的项返回 `rejected`，不影响其他 Task。
 }
 ```
 
-服务固定生成 6 条候选：3 条 `visual`、2 条 `risk`、1 条 `agent`。前端可以
-选择、批量替换词语或完全自定义，但最终提交仍必须满足 3+2+1，并且所有 Prompt
-不得重复。
+`custom_instruction` 现在表示完整的 Qwen-VL 文本提示词：
+
+- 省略或传 `null` 时，服务端使用当前完整默认模板。默认模板包含角色要求、默认生成
+  要求、候选上下文、JSON 输出格式和简体中文约束。
+- 提供非空字符串时，服务端将该字符串原样作为唯一文本块发送，不追加 system
+  提示词、候选上下文、输出格式说明或图片标签。模型输入严格为
+  `custom_instruction + 所选图片`，字符串首尾空白也会保留。
+- 自定义模式不设置 `response_format=json_object`，避免自定义文本未包含 `json` 字样
+  时被 OpenAI 兼容端点直接返回 HTTP 400；默认模板仍使用该参数。
+- 自定义提示词只需要求模型生成可直接用于 LISA `text` 字段的分割提示词；推荐在
+  多条结果时要求“每行输出一条，不要解释”。不再要求调用方描述 JSON、
+  `prompt_id` 或 `type`。
+
+服务端接受并归一化以下 Qwen 输出：
+
+- 纯文本；多行非空文本按每行一条处理，并移除常见项目符号或数字序号。
+- JSON 字符串数组或根数组，例如 `["提示词1", "提示词2"]`。
+- `{"prompt": "提示词"}`、`{"text": "提示词"}`，以及 `result/output/content`
+  等常见包装字段。
+- 原标准 `{"prompts": [{"prompt_id": "p1", "type": "visual",
+  "text": "提示词"}]}`。
+
+归一化时自动生成缺失或重复的 ID；缺失或未知 `type` 默认为 `visual`；空文本和重复
+文本会被删除；每条文本最多保留 1000 字符，最多保留 50 条。只有响应完全不含可用
+文本时 Operation 才会失败。归一化后的 `prompts[].text` 可直接进入 LISA JSON 的
+`text` 数组。
+
+Qwen 直接返回最终 Prompt，不再强制 3+2+1。
 
 ### 10.2 多目标联合 Prompt
 
@@ -783,7 +834,10 @@ Content-Type: application/json
     {"task_id": "tsk_1", "expected_version": 1},
     {"task_id": "tsk_2", "expected_version": 1}
   ],
-  "mode": "joint"
+  "mode": "joint",
+  "custom_instruction": "观察图片并生成同时覆盖所有目标关系的分割提示词，只返回符合 prompts 数组结构的 JSON。",
+  "include_mask": false,
+  "include_crop": false
 }
 ```
 
@@ -791,7 +845,8 @@ Content-Type: application/json
 
 - 必须包含 2～16 个不同 Task。
 - 所有 Task 必须属于同一个 `asset_id`。
-- 每个 Task 必须已有 SAM `mask` 或 `mask-overlay`，并且已有 `crop`。
+- 原图始终提供；只有 `include_mask=true` 或 `include_crop=true` 时，才要求每个 Task
+  已有相应制品。
 - `expected_version` 必须等于当前 Task 版本。
 - 成员 Task、版本和顺序会固化到 Task Group；生成期间任一 Task 版本发生变化，
   Operation 会失败，不会使用新旧混合的输入。
@@ -831,28 +886,7 @@ Qwen Worker 的一次联合输入包含：
   "result": {
     "task_group_id": "tgp_xxx",
     "source_task_ids": ["tsk_1", "tsk_2"],
-    "facts": {
-      "target_object": "画面中的一名作业人员及其旁边的施工设备",
-      "instance_count": 2,
-      "visual_anchor": ["人员位于设备左侧", "两者距离较近"],
-      "mask_granularity": "人员和设备的联合mask",
-      "visible_facts": ["人员位于设备左侧", "人员与设备相邻"],
-      "risk_semantics": "人员与施工设备距离较近",
-      "task_targets": [
-        {
-          "task_id": "tsk_1",
-          "target_object": "一名作业人员",
-          "instance_count": 1,
-          "visual_anchor": ["位于设备左侧"]
-        },
-        {
-          "task_id": "tsk_2",
-          "target_object": "一台施工设备",
-          "instance_count": 1,
-          "visual_anchor": ["位于人员右侧"]
-        }
-      ]
-    },
+    "facts": null,
     "prompts": [
       {
         "prompt_id": "visual-1",
@@ -886,37 +920,27 @@ Qwen Worker 的一次联合输入包含：
       }
     ],
     "provenance": {
-      "qwen_facts_prompt_version": "construction-joint-visible-facts-v2",
-      "qwen_enrichment_prompt_version": "construction-joint-prompts-3-2-1-grounded-v6"
+      "qwen_facts_prompt_version": "not-used-direct-generation",
+      "qwen_enrichment_prompt_version": "user-instruction-flexible-output-joint-v2"
     },
     "timings_ms": {
       "model_calls": 1,
-      "facts_call_ms": 1830.4,
+      "prompt_call_ms": 1830.4,
       "total_ms": 1832.1
     }
   }
 }
 ```
 
-联合事实中的 `task_targets` 必须按请求顺序逐项覆盖全部 Task ID；缺少、增加或
-打乱 Task 时 Operation 会失败，不会保存一个看似成功但遗漏目标的结果。这里的
-总 `instance_count` 表示联合集合中的目标实体数，具体对象数量以每个
-`task_targets[].instance_count` 为准。例如“人员 + 该人员穿着的反光背心”
-是两个 Task 目标，但不能解释成“两个人”。
-
-联合模式只调用一次 Qwen，提取包含全部 `task_targets` 的开放视觉事实；服务端
-校验 Task ID、顺序和数量后，使用 `target_object`、`visible_facts`、
-`visual_anchor` 和 `mask_granularity` 确定性生成完整 3+2+1 Prompt。这样不再
-串行执行“Prompt 生成 + Prompt 复核”两次额外模型调用，也避免重新引入对象
-数量错误、安全状态反转、光照条件或通用风险后果。
-
-实际 `prompts` 仍固定返回完整 3+2+1 六条。也可以直接查询持久化的 Group：
+联合模式只调用一次 Qwen，并把全部成员 Task 的候选上下文与用户提示词一并传入。
+Qwen 直接生成最终 `prompts`，不再生成或校验中间视觉事实，所以 `facts` 为 `null`；
+Prompt 数量和类型组合由用户提示词决定。也可以直接查询持久化的 Group：
 
 ```http
 GET /v1/annotation/task-groups/{task_group_id}
 ```
 
-该响应包含成员版本快照、Operation 状态、`facts`、`prompts`、`provenance`
+该响应包含成员版本快照、Operation 状态、`prompts`、`provenance`
 和错误信息。联合结果只属于 Task Group，不会写回任意单目标 Task，单目标
 Task 的 Mask 和 Prompt 保持不变。当前 ReasonSeg Release 仍只导出审核通过的
 单目标 Task；联合 Prompt 不会被自动导出或与任一单目标 Mask 错配。
@@ -925,7 +949,7 @@ Task 的 Mask 和 Prompt 保持不变。当前 ReasonSeg Release 仍只导出审
 
 ### 11.1 保存草稿
 
-先重新获取 Task，确认最新 `version`。将 SAM `shapes`、Qwen `facts` 和用户
+先重新获取 Task，确认最新 `version`。将 SAM `shapes`、Qwen `prompts` 和用户
 最终选择的 `prompts` 合并成完整 annotation：
 
 ```http
@@ -980,29 +1004,42 @@ POST /v1/annotation/tasks/{task_id}/submit
 }
 ```
 
-提交时强制校验：
+提交不再执行多边形完整性、边界、3+2+1 数量、Prompt 去重等业务校验；保存草稿时
+已经通过的基础 JSON 类型校验仍然保留。
 
-- 至少一个有效 target polygon。
-- polygon 在原图范围内且面积大于 0。
-- `instance_count`、目标粒度和字段非空。
-- Prompt 恰好为 3 visual + 2 risk + 1 agent。
-- Prompt ID 和内容不重复。
-
-成功后状态为 `review_pending`。同时服务会把该次提交保存为不可变审核快照：
+成功后状态直接为 `accepted`，无需审核。服务立即按上传图片文件名保存最终样本：
 
 ```text
-<ANNOTATION_STORAGE_ROOT>/submissions/<task_id>/v<8位版本号>.json
+<ANNOTATION_STORAGE_ROOT>/submissions/<上传图片名称>/
+├── <上传图片名称>.jpg
+├── <上传图片名称>_lisa.json
+├── <上传图片名称>_grounding-dino.json
+├── <上传图片名称>_grounding-dino-boxes.png
+├── <上传图片名称>_sam-mask.png
+└── <上传图片名称>_sam-overlay.png
 ```
 
-`current.json` 指向最近一次提交的同内容副本。快照记录原图相对路径及 SHA256、
-标注 JSON、标注人员、提交版本、类别、来源信息和备注，可通过
-`python -m annotation_service.tools.render_annotation_results` 生成同时包含 polygon、
-任务信息和全部 Prompt 的自包含审核 PNG。审核人员只需查看图片；审核状态仍以
-`annotation.db` 为准，`review/` 目录及其代码属于系统后台功能。
-首次启用审核区时可执行 `python -m annotation_service.review.backfill`，将数据库中
-已有的历史 submit 版本幂等写入该目录。
+提交时不再要求 SAM mask 和 overlay 必须存在；GroundingDINO 带框图若没有独立
+制品，会根据已保存的检测框重新绘制。不会再生成
+`current.json` 或 `v00000003.json` 这类文件系统审核快照。
 
-### 11.3 作废样本
+### 11.3 按时间导出最终结果
+
+```http
+GET /v1/annotation/export?start_time=2026-08-12T00:00:00%2B08:00&end_time=2026-08-12T23:59:59%2B08:00
+```
+
+时间上下界均包含边界值，使用带时区 ISO 8601。也可重复传入 `task_id` 精确筛选：
+
+```http
+GET /v1/annotation/export?task_id=tsk_001&task_id=tsk_002
+```
+
+接口同步返回 `application/zip`，响应头 `X-Annotation-Sample-Count` 表示样本数。
+ZIP 内每个样本一个目录，只包含上面的 6 个文件。无需创建 Release，也无需轮询
+Release Worker。
+
+### 11.4 作废样本
 
 对于误检、目标不应进入标注或用户主动终止的 Task：
 
