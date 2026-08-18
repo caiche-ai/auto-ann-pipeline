@@ -181,6 +181,7 @@ class PromptProvider(Protocol):
         *,
         context: QwenVisualContext,
         images: list[Any],
+        custom_instruction: str | None,
     ) -> QwenGenerationResult:
         ...
 
@@ -189,6 +190,7 @@ class PromptProvider(Protocol):
         *,
         context: QwenJointVisualContext,
         images: list[Any],
+        custom_instruction: str | None,
     ) -> QwenGenerationResult:
         ...
 
@@ -222,7 +224,9 @@ def _target_box(task: dict[str, Any]) -> list[float]:
     )
 
 
-def _visual_context(task: dict[str, Any]) -> QwenVisualContext:
+def _visual_context(
+    task: dict[str, Any], *, mask_included: bool = False
+) -> QwenVisualContext:
     source_hazard = task.get("source_hazard") or {}
     return QwenVisualContext(
         asset_id=task["asset"]["asset_id"],
@@ -238,15 +242,15 @@ def _visual_context(task: dict[str, Any]) -> QwenVisualContext:
         ],
         hazard_evidence=source_hazard.get("evidence", []),
         requires_visual_verification=True,
-        mask_available=bool(
-            task.get("artifacts", {}).get("mask_overlay_url")
-            or task.get("artifacts", {}).get("mask_png_url")
-        ),
+        mask_available=mask_included,
     )
 
 
 def _joint_visual_context(
     tasks: list[dict[str, Any]],
+    *,
+    masks_included: bool,
+    crops_included: bool,
 ) -> QwenJointVisualContext:
     return QwenJointVisualContext(
         asset_id=tasks[0]["asset"]["asset_id"],
@@ -278,8 +282,8 @@ def _joint_visual_context(
             for task in tasks
         ],
         requires_visual_verification=True,
-        all_masks_available=True,
-        all_crops_available=True,
+        all_masks_available=masks_included,
+        all_crops_available=crops_included,
     )
 
 
@@ -337,6 +341,183 @@ class QwenPromptWorker:
                 stop.wait(self.poll_seconds)
 
     def _process(self, operation: dict[str, Any]) -> None:
+        operation_id = operation["operation_id"]
+        heartbeat = OperationHeartbeat(
+            store=self.store,
+            operation_id=operation_id,
+            worker_id=self.worker_id,
+            lease_seconds=self.lease_seconds,
+            interval_seconds=self.heartbeat_seconds,
+        )
+        heartbeat.start()
+        try:
+            request = operation.get("request") or {}
+            custom_instruction = request.get("custom_instruction")
+            if custom_instruction is not None:
+                custom_instruction = str(custom_instruction)
+            include_mask = bool(request.get("include_mask", False))
+            include_crop = bool(request.get("include_crop", False))
+            if operation["operation_type"] == "joint_prompt_enrichment":
+                group = self.store.get_task_group(operation["task_group_id"])
+                tasks = [
+                    self.store.get_task(item["task_id"])
+                    for item in group["items"]
+                ]
+                for task, item in zip(tasks, group["items"]):
+                    if task["version"] != item["task_version"]:
+                        raise ValueError(
+                            "task version changed after joint prompt operation "
+                            "was queued"
+                        )
+                asset_path, asset_media_type = self.store.asset_file(
+                    group["asset_id"]
+                )
+                images = [
+                    image_file_to_input(
+                        asset_path,
+                        media_type=asset_media_type,
+                        label="original image",
+                    )
+                ]
+                for index, task in enumerate(tasks, start=1):
+                    if include_mask:
+                        try:
+                            path, media_type = self.store.artifact_file(
+                                task["task_id"], "mask-overlay"
+                            )
+                            kind = "mask overlay"
+                        except Exception:
+                            path, media_type = self.store.artifact_file(
+                                task["task_id"], "mask"
+                            )
+                            kind = "binary mask"
+                        images.append(
+                            image_file_to_input(
+                                path,
+                                media_type=media_type,
+                                label=(
+                                    f"target {index}, task {task['task_id']}, "
+                                    f"{kind}"
+                                ),
+                            )
+                        )
+                    if include_crop:
+                        path, media_type = self.store.artifact_file(
+                            task["task_id"], "crop"
+                        )
+                        images.append(
+                            image_file_to_input(
+                                path,
+                                media_type=media_type,
+                                label=(
+                                    f"target {index}, task "
+                                    f"{task['task_id']}, crop"
+                                ),
+                            )
+                        )
+                generation = self.provider.generate_joint(
+                    context=_joint_visual_context(
+                        tasks,
+                        masks_included=include_mask,
+                        crops_included=include_crop,
+                    ),
+                    images=images,
+                    custom_instruction=custom_instruction,
+                )
+                result = {
+                    "task_group_id": group["task_group_id"],
+                    "source_task_ids": group["source_task_ids"],
+                    **generation.as_dict(),
+                }
+            else:
+                task = self.store.get_task(operation["task_id"])
+                if task["version"] != operation["task_version"]:
+                    raise ValueError(
+                        "task version changed after prompt operation was queued"
+                    )
+                asset_path, asset_media_type = self.store.asset_file(
+                    task["asset"]["asset_id"]
+                )
+                images = [
+                    image_file_to_input(
+                        asset_path,
+                        media_type=asset_media_type,
+                        label="original image",
+                    )
+                ]
+                if include_mask:
+                    try:
+                        path, media_type = self.store.artifact_file(
+                            task["task_id"], "mask-overlay"
+                        )
+                        kind = "SAM mask overlay"
+                    except Exception:
+                        path, media_type = self.store.artifact_file(
+                            task["task_id"], "mask"
+                        )
+                        kind = "SAM binary mask"
+                    images.append(
+                        image_file_to_input(
+                            path, media_type=media_type, label=kind
+                        )
+                    )
+                if include_crop:
+                    path, media_type = self.store.artifact_file(
+                        task["task_id"], "crop"
+                    )
+                    images.append(
+                        image_file_to_input(
+                            path,
+                            media_type=media_type,
+                            label="target crop",
+                        )
+                    )
+                result = self.provider.generate(
+                    context=_visual_context(
+                        task, mask_included=include_mask
+                    ),
+                    images=images,
+                    custom_instruction=custom_instruction,
+                ).as_dict()
+            heartbeat.ensure_healthy()
+            if self.store.get_operation(operation_id)["status"] != "running":
+                raise ValueError(
+                    "prompt operation was cancelled before results were saved"
+                )
+            self.store.complete_operation(
+                operation_id,
+                worker_id=self.worker_id,
+                result=result,
+            )
+        except Exception as exc:
+            LOGGER.exception(
+                "Qwen prompt generation failed",
+                extra={"operation_id": operation_id},
+            )
+            try:
+                if isinstance(exc, QwenProviderError):
+                    error_code = "model_unavailable"
+                elif isinstance(exc, QwenContractError):
+                    error_code = "validation_error"
+                elif "task version changed" in str(exc):
+                    error_code = "version_conflict"
+                else:
+                    error_code = "internal_error"
+                self.store.fail_operation(
+                    operation_id,
+                    worker_id=self.worker_id,
+                    code=error_code,
+                    message=str(exc),
+                )
+            except Exception:
+                LOGGER.exception(
+                    "failed to persist Qwen operation error",
+                    extra={"operation_id": operation_id},
+                )
+        finally:
+            heartbeat.stop()
+
+    def _process_legacy(self, operation: dict[str, Any]) -> None:
         operation_id = operation["operation_id"]
         heartbeat = OperationHeartbeat(
             store=self.store,
@@ -516,7 +697,7 @@ class QwenPromptWorker:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run the Qwen2.5-VL prompt generation worker",
+        description="Run the Qwen3-VL prompt generation worker",
     )
     parser.add_argument(
         "--once",

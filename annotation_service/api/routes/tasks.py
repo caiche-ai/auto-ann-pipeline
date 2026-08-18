@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 
 from ..auth import AuthDependency
-from ..errors import StorageUnavailableError
+from ..errors import StorageUnavailableError, ValidationServiceError
 from ..schemas import (
     AnnotationCategory,
     AnnotationTask,
@@ -27,6 +27,7 @@ from ..schemas import (
     TaskVersionList,
 )
 from ...storage.repository import AnnotationStore
+from ...review.submission_export import materialize_submitted_task
 
 
 COMMON_RESPONSES = {
@@ -188,14 +189,23 @@ def build_tasks_router(
     ) -> dict[str, Any]:
         store = require_storage()
         payload = _model_json(request)
-        return await asyncio.to_thread(
-            store.submit_task,
-            task_id,
-            expected_version=payload["expected_version"],
-            annotator_id=payload["annotator_id"],
-            primary_result=payload["primary_result"],
-            comment=payload["comment"],
-        )
+        try:
+            submitted = await asyncio.to_thread(
+                store.submit_task,
+                task_id,
+                expected_version=payload["expected_version"],
+                annotator_id=payload["annotator_id"],
+                primary_result=payload["primary_result"],
+                comment=payload["comment"],
+            )
+            await asyncio.to_thread(
+                materialize_submitted_task,
+                store,
+                task_id,
+            )
+            return submitted
+        except ValueError as exc:
+            raise ValidationServiceError(str(exc)) from exc
 
     @router.post(
         "/{task_id}/invalidate",
@@ -282,7 +292,7 @@ def build_tasks_router(
             202: {
                 "model": OperationAccepted,
                 "description": (
-                    "Qwen2.5-VL prompt generation operation accepted."
+                    "Qwen3-VL prompt generation operation accepted."
                 ),
             },
         },
@@ -295,6 +305,9 @@ def build_tasks_router(
             require_storage().create_prompt_enrichment_operation,
             task_id=task_id,
             expected_version=request.expected_version,
+            custom_instruction=request.custom_instruction,
+            include_mask=request.include_mask,
+            include_crop=request.include_crop,
         )
         return {
             "operation_id": operation["operation_id"],

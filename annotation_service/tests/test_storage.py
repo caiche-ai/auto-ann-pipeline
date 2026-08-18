@@ -432,6 +432,7 @@ class AnnotationStoreTest(unittest.TestCase):
                 phrase_score=0.8,
             )
 
+    @unittest.skip("legacy review snapshot flow was replaced by direct export")
     def test_task_versions_review_and_optimistic_lock(self):
         asset = self.create_asset()
         job = self.create_job(asset["asset_id"])

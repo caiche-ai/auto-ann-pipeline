@@ -59,6 +59,7 @@ class StaticOpenAPIContractTest(unittest.TestCase):
                 "createPromptEnrichment",
                 "createBatchPromptEnrichments",
                 "createJointPromptEnrichment",
+                "getDefaultQwenPromptTemplate",
                 "getAnnotationTaskGroup",
                 "getTaskArtifact",
                 "getAnnotationOperation",
@@ -67,6 +68,7 @@ class StaticOpenAPIContractTest(unittest.TestCase):
                 "getAnnotationRelease",
                 "getAnnotationReleaseManifest",
                 "getAnnotationReleaseArchive",
+                "exportSubmittedAnnotations",
             },
         )
         static_request = static["components"]["schemas"][
@@ -109,6 +111,7 @@ class StaticOpenAPIContractTest(unittest.TestCase):
             "BuildReviewTasksResponse",
             "DetectionOverlapWarning",
             "JointPromptEnrichmentRequest",
+            "DefaultQwenPromptTemplateResponse",
             "ReviewTaskBuildItem",
             "TaskGroup",
             "TaskGroupMember",
@@ -124,6 +127,19 @@ class StaticOpenAPIContractTest(unittest.TestCase):
             self.assertEqual(
                 set(static_schema.get("required", [])),
                 set(runtime_schema.get("required", [])),
+            )
+        for schema_name in (
+            "BatchPromptEnrichmentItem",
+            "CreatePromptEnrichmentRequest",
+            "JointPromptEnrichmentRequest",
+        ):
+            self.assertEqual(
+                static["components"]["schemas"][schema_name]["properties"][
+                    "custom_instruction"
+                ],
+                runtime["components"]["schemas"][schema_name]["properties"][
+                    "custom_instruction"
+                ],
             )
 
 

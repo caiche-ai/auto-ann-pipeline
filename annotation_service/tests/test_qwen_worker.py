@@ -65,12 +65,12 @@ class FakeProvider:
             enrichment_prompt_version="prompts-v1",
         )
 
-    def generate(self, *, context, images):
-        self.calls.append((context, images))
+    def generate(self, *, context, images, custom_instruction):
+        self.calls.append((context, images, custom_instruction))
         return self._result()
 
-    def generate_joint(self, *, context, images):
-        self.calls.append((context, images))
+    def generate_joint(self, *, context, images, custom_instruction):
+        self.calls.append((context, images, custom_instruction))
         return self._result(instance_count=2)
 
 
@@ -150,7 +150,8 @@ class QwenPromptWorkerTest(unittest.TestCase):
         self.assertEqual(completed["status"], "succeeded")
         self.assertEqual(len(completed["result"]["prompts"]), 6)
         self.assertEqual(len(provider.calls), 1)
-        self.assertEqual(len(provider.calls[0][1]), 2)
+        self.assertEqual(len(provider.calls[0][1]), 1)
+        self.assertIsNone(provider.calls[0][2])
         unchanged = self.store.get_task(self.task["task_id"])
         self.assertEqual(unchanged["version"], 1)
         self.assertEqual(unchanged["annotation"]["prompts"], [])
@@ -202,6 +203,8 @@ class QwenPromptWorkerTest(unittest.TestCase):
                     "expected_version": 1,
                 },
             ],
+            include_mask=True,
+            include_crop=True,
         )
         provider = FakeProvider()
         worker = QwenPromptWorker(

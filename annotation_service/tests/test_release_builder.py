@@ -79,18 +79,53 @@ class ReleaseBuilderTest(unittest.TestCase):
             width=20,
             height=12,
             group_id=group_id,
+            metadata={"original_filename": "site-photo.png"},
         )
         job = self.store.create_job(
             asset_ids=[asset["asset_id"]],
             requested_categories=["helmet_missing"],
             pipeline_version="manual-v1",
         )
+        detection = self.store.add_detection(
+            job_id=job["job_id"],
+            asset_id=asset["asset_id"],
+            entity="person",
+            box_xyxy=[2, 2, 16, 11],
+            box_score=0.91,
+            phrase_score=0.87,
+            metadata={"model": "groundingdino-swint-ogc"},
+        )
         task = self.store.create_task(
             job_id=job["job_id"],
             asset_id=asset["asset_id"],
             category="helmet_missing",
             annotation=complete_annotation(target),
-            provenance={"pipeline_version": "manual-v1"},
+            provenance={
+                "pipeline_version": "manual-v1",
+                "grounding_dino_version": "groundingdino-swint-ogc",
+                "grounding_prompt": "person",
+                "source_detection_id": detection["detection_id"],
+            },
+        )
+        self.store.store_artifact(
+            task_id=task["task_id"],
+            artifact_type="detections",
+            data=image_bytes((120, 20, 20)),
+            media_type="image/png",
+        )
+        self.store.store_artifact(
+            task_id=task["task_id"],
+            artifact_type="mask",
+            data=image_bytes((255, 255, 255)),
+            media_type="image/png",
+            operation_id="sam-operation-1",
+        )
+        self.store.store_artifact(
+            task_id=task["task_id"],
+            artifact_type="mask-overlay",
+            data=image_bytes((20, 120, 20)),
+            media_type="image/png",
+            operation_id="sam-operation-1",
         )
         submitted = self.store.submit_task(
             task["task_id"],
@@ -99,6 +134,8 @@ class ReleaseBuilderTest(unittest.TestCase):
             primary_result="prompt_ok",
             comment="ready",
         )
+        if submitted["status"] == "accepted":
+            return submitted
         return self.store.review_task(
             task["task_id"],
             expected_version=submitted["version"],
@@ -162,11 +199,20 @@ class ReleaseBuilderTest(unittest.TestCase):
         by_task = {
             item["task_id"]: item for item in manifest["samples"]
         }
-        self.assertEqual(
-            by_task[first["task_id"]]["split"],
-            by_task[second["task_id"]]["split"],
-        )
         self.assertIn(third["task_id"], by_task)
+        prefixes = {item["file_prefix"] for item in manifest["samples"]}
+        self.assertEqual(len(prefixes), 3)
+        self.assertTrue(all(item.startswith("site-photo") for item in prefixes))
+        first_process = by_task[first["task_id"]]["process"]
+        first_record = by_task[first["task_id"]]
+        self.assertEqual(first_record["source_filename"], "site-photo.png")
+        self.assertTrue(first_record["file_prefix"].startswith("site-photo"))
+        self.assertEqual(
+            first_process["grounding_dino"]["detection_count"],
+            1,
+        )
+        self.assertIsNotNone(first_process["sam"]["mask"])
+        self.assertIsNotNone(first_process["sam"]["overlay"])
         with zipfile.ZipFile(archive_path) as archive:
             names = archive.namelist()
             self.assertEqual(names, sorted(names))
@@ -174,13 +220,29 @@ class ReleaseBuilderTest(unittest.TestCase):
                 "ReasonSegGroundedV1/annotation_manifest.jsonl",
                 names,
             )
-            json_names = [
-                name
-                for name in names
-                if name.endswith(".json")
-                and "/build_summary.json" not in name
-            ]
-            sample_json = json.loads(archive.read(json_names[0]))
+            self.assertNotIn("ReasonSegGroundedV1/build_summary.json", names)
+            self.assertFalse(
+                any(
+                    name.endswith("_grounding-dino-task-overlay.png")
+                    for name in names
+                )
+            )
+            self.assertFalse(
+                any(
+                    f"ReasonSegGroundedV1/{directory}/" in name
+                    for directory in ("train", "val", "golden", "process")
+                    for name in names
+                )
+            )
+            sample_record = by_task[first["task_id"]]
+            dataset_name = "ReasonSegGroundedV1"
+            self.assertEqual(
+                Path(sample_record["annotation"]).name,
+                f"{sample_record['file_prefix']}_lisa.json",
+            )
+            sample_json = json.loads(
+                archive.read(f"{dataset_name}/{sample_record['annotation']}")
+            )
             self.assertEqual(len(sample_json["text"]), 6)
             self.assertTrue(sample_json["is_sentence"])
             self.assertTrue(
@@ -189,6 +251,47 @@ class ReleaseBuilderTest(unittest.TestCase):
                     for shape in sample_json["shapes"]
                 )
             )
+            grounding_path = sample_record["process"]["grounding_dino"][
+                "detections"
+            ]
+            grounding = json.loads(
+                archive.read(f"{dataset_name}/{grounding_path}")
+            )
+            self.assertEqual(
+                grounding["detections"][0]["box_xyxy"],
+                [2.0, 2.0, 16.0, 11.0],
+            )
+            sam_mask = sample_record["process"]["sam"]["mask"]
+            self.assertIn(f"{dataset_name}/{sam_mask['file']}", names)
+            sam_overlay = sample_record["process"]["sam"]["overlay"]
+            self.assertIn(f"{dataset_name}/{sam_overlay['file']}", names)
+            sample_directory = Path(sample_record["image"]).parent
+            self.assertNotEqual(sample_directory, Path("."))
+            self.assertEqual(
+                sample_directory.name,
+                sample_record["file_prefix"],
+            )
+            self.assertEqual(
+                sample_directory,
+                Path(sample_record["annotation"]).parent,
+            )
+            self.assertEqual(
+                sample_directory,
+                Path(grounding_path).parent,
+            )
+            self.assertEqual(
+                sample_directory,
+                Path(sam_mask["file"]).parent,
+            )
+            for path in (
+                sample_record["image"],
+                grounding_path,
+                sam_mask["file"],
+                sam_overlay["file"],
+            ):
+                self.assertTrue(
+                    Path(path).name.startswith(sample_record["file_prefix"])
+                )
             for name in names:
                 self.assertFalse(name.startswith("/"))
                 self.assertNotIn("..", Path(name).parts)
@@ -254,12 +357,8 @@ class ReleaseBuilderTest(unittest.TestCase):
             with zipfile.ZipFile(archive_path) as archive:
                 archive.extractall(extracted)
             dataset_root = Path(extracted) / "loader-compatible-v1"
-            image_path = next(
-                path
-                for split in ("train", "val", "golden")
-                for path in (dataset_root / split).glob("*.jpg")
-            )
-            json_path = image_path.with_suffix(".json")
+            image_path = next(dataset_root.glob("*/*.jpg"))
+            json_path = image_path.parent / f"{image_path.stem}_lisa.json"
             image = cv2.imread(str(image_path))
             mask, prompts, is_sentence = get_mask_from_json(
                 str(json_path),

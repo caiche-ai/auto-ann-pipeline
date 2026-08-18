@@ -23,8 +23,10 @@ from .schemas import (
     ReadinessResponse,
 )
 from .routes.assets import build_assets_router
+from .routes.exports import build_exports_router
 from .routes.jobs import build_jobs_router
 from .routes.operations import build_operations_router
+from .routes.prompt_templates import build_prompt_templates_router
 from .routes.releases import build_releases_router
 from .routes.task_batches import build_task_batches_router
 from .routes.task_groups import build_task_groups_router
@@ -267,6 +269,9 @@ def create_app(
         )
     )
     app.include_router(
+        build_prompt_templates_router(authenticate=authenticate)
+    )
+    app.include_router(
         build_tasks_router(
             storage=cast(AnnotationStore | None, storage),
             authenticate=authenticate,
@@ -292,6 +297,12 @@ def create_app(
     )
     app.include_router(
         build_releases_router(
+            storage=cast(AnnotationStore | None, storage),
+            authenticate=authenticate,
+        )
+    )
+    app.include_router(
+        build_exports_router(
             storage=cast(AnnotationStore | None, storage),
             authenticate=authenticate,
         )

@@ -366,7 +366,7 @@ class FullAnnotationPipelineWorker:
                 f"Qwen2.5-VL failed: {exc}",
             ) from exc
         result = generated.as_dict()
-        facts = result["facts"]
+        facts = result["facts"] or refreshed["annotation"]
         annotation = {
             "target_object": facts["target_object"],
             "instance_count": facts["instance_count"],

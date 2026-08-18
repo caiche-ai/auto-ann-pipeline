@@ -427,7 +427,7 @@ class PolygonShape(StrictModel):
 class AnnotationPrompt(StrictModel):
     prompt_id: str
     type: PromptType
-    text: str = Field(..., min_length=1, max_length=200)
+    text: str = Field(..., min_length=1, max_length=1000)
 
     @validator("text")
     def prompt_must_not_be_blank(cls, value: str) -> str:
@@ -446,7 +446,7 @@ class AnnotationContent(StrictModel):
     shapes: List[PolygonShape] = Field(default_factory=list)
     prompts: List[AnnotationPrompt] = Field(
         default_factory=list,
-        max_items=6,
+        max_items=50,
     )
 
 
@@ -746,8 +746,50 @@ class CreateMaskCandidateRequest(StrictModel):
         return values
 
 
+DEFAULT_QWEN_PROMPT_INSTRUCTION = (
+    "请根据提供的原图以及用户选择附加的mask或裁剪图，生成用于图像分割标注的"
+    "Prompt。每条Prompt应明确描述需要分割的可见目标，不要虚构图片中无法确认的"
+    "对象、动作、原因或结果。可根据图片内容自行决定Prompt的数量和表达方式。"
+)
+
+
+class DefaultQwenPromptTemplateResponse(StrictModel):
+    template_id: Literal["qwen-default-v1"] = "qwen-default-v1"
+    template: str
+    context_placeholder: Literal["{{candidate_context_json}}"] = (
+        "{{candidate_context_json}}"
+    )
+
+
+def _normalize_qwen_prompt_instruction(
+    value: Optional[str],
+) -> Optional[str]:
+    if value is None:
+        return None
+    if not value.strip():
+        raise ValueError("custom_instruction must not be blank")
+    return value
+
+
 class CreatePromptEnrichmentRequest(StrictModel):
     expected_version: int = Field(..., ge=1)
+    custom_instruction: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=4000,
+        description=(
+            "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加"
+            "系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+        ),
+    )
+    include_mask: bool = False
+    include_crop: bool = False
+
+    @validator("custom_instruction")
+    def custom_instruction_must_not_be_blank(
+        cls, value: Optional[str]
+    ) -> Optional[str]:
+        return _normalize_qwen_prompt_instruction(value)
 
 
 class BatchMaskCandidateItem(StrictModel):
@@ -776,6 +818,21 @@ class BatchMaskCandidatesRequest(StrictModel):
 class BatchPromptEnrichmentItem(StrictModel):
     task_id: str = Field(..., min_length=1, max_length=128)
     expected_version: int = Field(..., ge=1)
+    custom_instruction: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=4000,
+        description=(
+            "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加"
+            "系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+        ),
+    )
+    include_mask: bool = False
+    include_crop: bool = False
+
+    _instruction_is_not_blank = validator(
+        "custom_instruction", allow_reuse=True
+    )(_normalize_qwen_prompt_instruction)
 
 
 class BatchPromptEnrichmentsRequest(StrictModel):
@@ -800,6 +857,21 @@ class JointPromptEnrichmentRequest(StrictModel):
         max_items=16,
     )
     mode: Literal["joint"] = "joint"
+    custom_instruction: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=4000,
+        description=(
+            "完整的 Qwen-VL 文本提示词。提供后将原样发送，服务端不会追加"
+            "系统提示词、上下文或输出格式说明；省略时使用服务端完整默认模板。"
+        ),
+    )
+    include_mask: bool = False
+    include_crop: bool = False
+
+    _instruction_is_not_blank = validator(
+        "custom_instruction", allow_reuse=True
+    )(_normalize_qwen_prompt_instruction)
 
     @validator("items")
     def task_ids_must_be_unique(cls, value):

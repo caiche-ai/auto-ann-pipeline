@@ -41,7 +41,6 @@ from ..api.schemas import (
     StageResult,
     TaskStatus,
 )
-from ..review.workspace import persist_review_submission
 from .state_machine import (
     ensure_job_transition,
     ensure_release_transition,
@@ -60,7 +59,6 @@ from .schema import (
     SCHEMA_V10,
     SCHEMA_VERSION,
 )
-from .validation import validate_annotation_for_submission
 
 
 def utc_now() -> str:
@@ -2769,35 +2767,17 @@ class AnnotationStore:
                         }
                     ],
                 )
-            validate_annotation_for_submission(
-                _json_loads(row["annotation_json"], {}),
-                width=row["width"],
-                height=row["height"],
-                category=row["category"],
-            )
             version = self._update_task_snapshot(
                 connection,
                 row=row,
                 expected_version=expected_version,
                 annotation_payload=_json_loads(row["annotation_json"], {}),
-                target_status=TaskStatus.REVIEW_PENDING,
+                target_status=TaskStatus.ACCEPTED,
                 editor_id=annotator_id,
                 change_kind="submit",
                 primary_result=result,
                 annotator_id=annotator_id,
                 comment=comment,
-            )
-            persist_review_submission(
-                self.submissions_root,
-                self._review_submission_payload(
-                    row,
-                    task_version=version,
-                    annotation=_json_loads(row["annotation_json"], {}),
-                    annotator_id=annotator_id,
-                    primary_result=result,
-                    comment=comment,
-                    submitted_at=utc_now(),
-                ),
             )
             connection.execute("COMMIT")
         return self.get_task(task_id)
@@ -2874,6 +2854,96 @@ class AnnotationStore:
             for row in rows
         ]
 
+    def list_submission_export_snapshots(
+        self,
+        *,
+        submitted_from: str | None = None,
+        submitted_to: str | None = None,
+        task_ids: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the latest submitted version of each matching task."""
+
+        self._ensure_initialized()
+        selected_ids = list(dict.fromkeys(task_ids or []))
+        query = """
+            WITH latest_submissions AS (
+                SELECT task_id, MAX(version) AS version
+                FROM task_versions
+                WHERE change_kind = 'submit'
+                GROUP BY task_id
+            )
+            SELECT
+                t.task_id, t.job_id, t.asset_id, t.category,
+                t.status, t.primary_result, t.annotator_id,
+                t.reviewer_id, t.created_at, t.updated_at,
+                t.provenance_json, t.warnings_json,
+                tv.version AS submitted_version,
+                tv.annotation_json AS submitted_annotation_json,
+                tv.editor_id AS submitted_by,
+                tv.comment AS submission_comment,
+                tv.created_at AS submitted_at,
+                a.group_id, a.image_path, a.media_type,
+                a.width, a.height, a.sha256 AS image_sha256,
+                a.source_id AS asset_source_id,
+                a.metadata_json AS asset_metadata_json
+            FROM latest_submissions ls
+            JOIN task_versions tv
+              ON tv.task_id = ls.task_id AND tv.version = ls.version
+            JOIN annotation_tasks t ON t.task_id = tv.task_id
+            JOIN assets a ON a.asset_id = t.asset_id
+            WHERE 1 = 1
+        """
+        parameters: list[Any] = []
+        if submitted_from is not None:
+            query += " AND tv.created_at >= ?"
+            parameters.append(submitted_from)
+        if submitted_to is not None:
+            query += " AND tv.created_at <= ?"
+            parameters.append(submitted_to)
+        if selected_ids:
+            placeholders = ",".join("?" for _ in selected_ids)
+            query += f" AND t.task_id IN ({placeholders})"
+            parameters.extend(selected_ids)
+        query += " ORDER BY tv.created_at, t.task_id"
+
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+            snapshots: list[dict[str, Any]] = []
+            for row in rows:
+                snapshots.append(
+                    {
+                        **dict(row),
+                        "version": int(row["submitted_version"]),
+                        "annotation": _json_loads(
+                            row["submitted_annotation_json"],
+                            {},
+                        ),
+                        "provenance": _json_loads(
+                            row["provenance_json"],
+                            {},
+                        ),
+                        "warnings": _json_loads(
+                            row["warnings_json"],
+                            [],
+                        ),
+                        "asset_metadata": _json_loads(
+                            row["asset_metadata_json"],
+                            {},
+                        ),
+                        "image_path": self._resolve_relative(
+                            row["image_path"]
+                        ),
+                        "reviews": [],
+                        **self._task_process_export_snapshot(
+                            connection,
+                            task_id=row["task_id"],
+                            job_id=row["job_id"],
+                            asset_id=row["asset_id"],
+                        ),
+                    }
+                )
+        return snapshots
+
     def review_task(
         self,
         task_id: str,
@@ -2920,13 +2990,6 @@ class AnnotationStore:
                             ),
                         }
                     ],
-                )
-            if decision_value == ReviewDecision.ACCEPT:
-                validate_annotation_for_submission(
-                    _json_loads(row["annotation_json"], {}),
-                    width=row["width"],
-                    height=row["height"],
-                    category=row["category"],
                 )
             version = self._update_task_snapshot(
                 connection,
@@ -3089,12 +3152,17 @@ class AnnotationStore:
         *,
         items: list[dict[str, Any]],
         mode: str = "joint",
+        custom_instruction: str | None = None,
+        include_mask: bool = False,
+        include_crop: bool = False,
     ) -> dict[str, Any]:
         self._ensure_initialized()
         if mode != "joint":
             raise ValueError("joint prompt mode must be 'joint'")
         if not 2 <= len(items) <= 16:
             raise ValueError("joint prompt requires 2 to 16 Tasks")
+        if custom_instruction is not None and not custom_instruction.strip():
+            raise ValueError("custom_instruction must not be blank")
         normalized_items: list[dict[str, Any]] = []
         seen: set[str] = set()
         for item in items:
@@ -3116,6 +3184,9 @@ class AnnotationStore:
         request_payload = {
             "mode": mode,
             "items": normalized_items,
+            "custom_instruction": custom_instruction,
+            "include_mask": include_mask,
+            "include_crop": include_crop,
         }
         request_json = canonical_json(request_payload)
         task_group_id = _new_id("tgp")
@@ -3179,18 +3250,19 @@ class AnnotationStore:
                         (item["task_id"],),
                     ).fetchall()
                 }
-                if not artifact_types.intersection(
+                missing_mask = include_mask and not artifact_types.intersection(
                     {"mask", "mask-overlay"}
-                ) or "crop" not in artifact_types:
+                )
+                missing_crop = include_crop and "crop" not in artifact_types
+                if missing_mask or missing_crop:
                     connection.execute("ROLLBACK")
                     raise ValidationServiceError(
-                        "joint prompt generation requires mask and crop "
-                        "artifacts for every Task",
+                        "selected Qwen image inputs are unavailable",
                         details=[
                             {
                                 "field": f"items.{index}.task_id",
                                 "reason": (
-                                    "store mask or mask-overlay and crop "
+                                    "store each selected mask/crop artifact "
                                     "before requesting joint Qwen generation"
                                 ),
                             }
@@ -3316,10 +3388,22 @@ class AnnotationStore:
         *,
         task_id: str,
         expected_version: int,
+        custom_instruction: str | None = None,
+        include_mask: bool = False,
+        include_crop: bool = False,
     ) -> dict[str, Any]:
         self._ensure_initialized()
         if expected_version < 1:
             raise ValueError("expected_version must be positive")
+        if custom_instruction is not None and not custom_instruction.strip():
+            raise ValueError("custom_instruction must not be blank")
+        request_json = canonical_json(
+            {
+                "custom_instruction": custom_instruction,
+                "include_mask": include_mask,
+                "include_crop": include_crop,
+            }
+        )
         operation_id = _new_id("op")
         created_at = utc_now()
         with self._lock, self._connect() as connection:
@@ -3346,25 +3430,31 @@ class AnnotationStore:
                         }
                     ],
                 )
-            available_artifact = connection.execute(
+            artifact_types = {
+                row["artifact_type"]
+                for row in connection.execute(
                 """
-                SELECT 1 FROM artifacts
+                SELECT DISTINCT artifact_type FROM artifacts
                 WHERE task_id = ?
-                  AND artifact_type IN ('mask-overlay', 'mask')
-                LIMIT 1
+                  AND artifact_type IN ('mask-overlay', 'mask', 'crop')
                 """,
                 (task_id,),
-            ).fetchone()
-            if available_artifact is None:
+                ).fetchall()
+            }
+            missing_mask = include_mask and not artifact_types.intersection(
+                {"mask", "mask-overlay"}
+            )
+            missing_crop = include_crop and "crop" not in artifact_types
+            if missing_mask or missing_crop:
                 connection.execute("ROLLBACK")
                 raise ValidationServiceError(
-                    "prompt generation requires a SAM mask artifact",
+                    "selected Qwen image inputs are unavailable",
                     details=[
                         {
                             "field": "task_id",
                             "reason": (
-                                "store mask-overlay or mask before requesting "
-                                "Qwen prompt generation"
+                                "store each selected mask/crop artifact before "
+                                "requesting Qwen prompt generation"
                             ),
                         }
                     ],
@@ -3374,10 +3464,11 @@ class AnnotationStore:
                 SELECT operation_id FROM annotation_operations
                 WHERE operation_type = 'prompt_enrichment'
                   AND task_id = ? AND task_version = ?
+                  AND request_json = ?
                   AND status IN ('queued', 'running')
                 ORDER BY created_at, operation_id LIMIT 1
                 """,
-                (task_id, expected_version),
+                (task_id, expected_version, request_json),
             ).fetchone()
             if existing is not None:
                 connection.execute("COMMIT")
@@ -3388,13 +3479,14 @@ class AnnotationStore:
                     operation_id, operation_type, task_id, task_version,
                     status, request_json, created_at
                 ) VALUES (
-                    ?, 'prompt_enrichment', ?, ?, 'queued', '{}', ?
+                    ?, 'prompt_enrichment', ?, ?, 'queued', ?, ?
                 )
                 """,
                 (
                     operation_id,
                     task_id,
                     expected_version,
+                    request_json,
                     created_at,
                 ),
             )
@@ -4585,7 +4677,9 @@ class AnnotationStore:
                     t.annotator_id, t.reviewer_id,
                     t.created_at, t.updated_at,
                     a.group_id, a.image_path, a.media_type,
-                    a.width, a.height, a.sha256 AS image_sha256
+                    a.width, a.height, a.sha256 AS image_sha256,
+                    a.source_id AS asset_source_id,
+                    a.metadata_json AS asset_metadata_json
                 FROM annotation_tasks t
                 JOIN assets a ON a.asset_id = t.asset_id
                 WHERE t.status = 'accepted'
@@ -4620,13 +4714,129 @@ class AnnotationStore:
                             row["provenance_json"],
                             {},
                         ),
+                        "asset_metadata": _json_loads(
+                            row["asset_metadata_json"],
+                            {},
+                        ),
                         "image_path": self._resolve_relative(
                             row["image_path"]
                         ),
                         "reviews": reviews,
+                        **self._task_process_export_snapshot(
+                            connection,
+                            task_id=row["task_id"],
+                            job_id=row["job_id"],
+                            asset_id=row["asset_id"],
+                        ),
                     }
                 )
         return snapshots
+
+    def get_task_process_export_snapshot(
+        self,
+        task_id: str,
+    ) -> dict[str, Any]:
+        """Return GroundingDINO and SAM inputs for a release sample."""
+
+        self._ensure_initialized()
+        with self._connect() as connection:
+            row = self._row_or_not_found(
+                connection,
+                """
+                SELECT task_id, job_id, asset_id
+                FROM annotation_tasks WHERE task_id = ?
+                """,
+                (task_id,),
+                "annotation task",
+            )
+            return self._task_process_export_snapshot(
+                connection,
+                task_id=row["task_id"],
+                job_id=row["job_id"],
+                asset_id=row["asset_id"],
+            )
+
+    def _task_process_export_snapshot(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        task_id: str,
+        job_id: str,
+        asset_id: str,
+    ) -> dict[str, Any]:
+        detections = [
+            {
+                "detection_id": row["detection_id"],
+                "entity": row["entity"],
+                "box_xyxy": [row["x1"], row["y1"], row["x2"], row["y2"]],
+                "box_score": row["box_score"],
+                "phrase_score": row["phrase_score"],
+                "metadata": _json_loads(row["metadata_json"], {}),
+                "created_at": row["created_at"],
+            }
+            for row in connection.execute(
+                """
+                SELECT * FROM detections
+                WHERE job_id = ? AND asset_id = ?
+                ORDER BY created_at, detection_id
+                """,
+                (job_id, asset_id),
+            ).fetchall()
+        ]
+        artifacts: dict[str, dict[str, Any]] = {}
+        artifact_names = {
+            "mask": "sam_mask",
+            "mask-overlay": "sam_overlay",
+        }
+        for row in connection.execute(
+            """
+            SELECT * FROM artifacts
+            WHERE task_id = ?
+              AND artifact_type IN ('mask', 'mask-overlay')
+            ORDER BY created_at DESC, artifact_id DESC
+            """,
+            (task_id,),
+        ).fetchall():
+            name = artifact_names[row["artifact_type"]]
+            if name in artifacts:
+                continue
+            artifacts[name] = {
+                "artifact_id": row["artifact_id"],
+                "operation_id": row["operation_id"],
+                "path": self._resolve_relative(row["file_path"]),
+                "media_type": row["media_type"],
+                "sha256": row["sha256"],
+                "size_bytes": row["size_bytes"],
+                "width": row["width"],
+                "height": row["height"],
+                "metadata": _json_loads(row["metadata_json"], {}),
+                "created_at": row["created_at"],
+            }
+        bbox_image = connection.execute(
+            """
+            SELECT * FROM job_artifacts
+            WHERE job_id = ? AND asset_id = ? AND artifact_type = 'bbox-image'
+            ORDER BY created_at DESC, artifact_id DESC LIMIT 1
+            """,
+            (job_id, asset_id),
+        ).fetchone()
+        if bbox_image is not None:
+            artifacts["grounding_dino_bbox_image"] = {
+                "artifact_id": bbox_image["artifact_id"],
+                "operation_id": None,
+                "path": self._resolve_relative(bbox_image["file_path"]),
+                "media_type": bbox_image["media_type"],
+                "sha256": bbox_image["sha256"],
+                "size_bytes": bbox_image["size_bytes"],
+                "width": bbox_image["width"],
+                "height": bbox_image["height"],
+                "metadata": _json_loads(bbox_image["metadata_json"], {}),
+                "created_at": bbox_image["created_at"],
+            }
+        return {
+            "grounding_dino_detections": detections,
+            "process_artifacts": artifacts,
+        }
 
     def fail_release(
         self,

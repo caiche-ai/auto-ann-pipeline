@@ -59,6 +59,7 @@ class ReviewWorkspaceTest(unittest.TestCase):
             width=32,
             height=24,
             group_id="site01:camera01",
+            metadata={"original_filename": "review-photo.png"},
         )
         job = self.store.create_job(
             asset_ids=[asset["asset_id"]],
@@ -85,6 +86,7 @@ class ReviewWorkspaceTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_renderer_embeds_annotation_and_prompts_in_one_image(self):
+        backfill_review_submissions(self.store)
         output_root = Path(self.temporary.name) / "review-workspace" / "outputs"
         rendered = render_annotation_results(
             storage_root=self.root,
@@ -129,11 +131,15 @@ class ReviewWorkspaceTest(unittest.TestCase):
             golden_ratio=0.0,
         )
 
-        dataset_root = output_root / "ReasonSegReviewedTest" / "train"
-        images = list(dataset_root.glob("*.jpg"))
-        annotations = list(dataset_root.glob("*.json"))
+        dataset_root = output_root / "ReasonSegReviewedTest"
+        images = list(dataset_root.glob("*/*.jpg"))
+        annotations = [
+            image.parent / f"{image.stem}_lisa.json" for image in images
+        ]
         self.assertEqual(len(images), 1)
         self.assertEqual(len(annotations), 1)
+        self.assertEqual(images[0].parent.name, "review-photo")
+        self.assertEqual(images[0].name, "review-photo.jpg")
         payload = json.loads(annotations[0].read_text(encoding="utf-8"))
         self.assertEqual(payload["shapes"][0]["label"], "target")
         self.assertEqual(len(payload["text"]), 6)

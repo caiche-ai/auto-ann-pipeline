@@ -13,21 +13,16 @@ from urllib.request import Request, urlopen
 
 from .contract import (
     QWEN_ENRICHMENT_PROMPT_VERSION,
-    QWEN_FACTS_PROMPT_VERSION,
     QWEN_JOINT_ENRICHMENT_PROMPT_VERSION,
-    QWEN_JOINT_FACTS_PROMPT_VERSION,
     QwenImageInput,
     QwenJointVisualFacts,
     QwenJointVisualContext,
     QwenPromptSet,
     QwenVisualContext,
     QwenVisualFacts,
-    build_joint_visual_facts_messages,
-    build_visual_facts_messages,
-    ground_prompt_set,
-    ground_joint_prompt_set,
-    parse_joint_visual_facts,
-    parse_visual_facts,
+    build_direct_joint_prompt_messages,
+    build_direct_prompt_messages,
+    parse_prompt_set,
 )
 
 
@@ -79,7 +74,7 @@ class QwenProviderConfig:
 
 @dataclass(frozen=True)
 class QwenGenerationResult:
-    facts: QwenVisualFacts | QwenJointVisualFacts
+    facts: QwenVisualFacts | QwenJointVisualFacts | None
     prompt_set: QwenPromptSet
     provider: str
     model: str
@@ -89,12 +84,15 @@ class QwenGenerationResult:
     usage: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
-        model_dump = getattr(self.facts, "model_dump", None)
-        facts = (
-            model_dump(mode="json")
-            if callable(model_dump)
-            else json.loads(self.facts.json())
-        )
+        if self.facts is None:
+            facts = None
+        else:
+            model_dump = getattr(self.facts, "model_dump", None)
+            facts = (
+                model_dump(mode="json")
+                if callable(model_dump)
+                else json.loads(self.facts.json())
+            )
         prompt_dump = getattr(self.prompt_set, "model_dump", None)
         prompt_set = (
             prompt_dump(mode="json")
@@ -178,7 +176,7 @@ def _default_transport(
 
 
 class Qwen25VLProvider:
-    """Single-call Qwen visual grounding with deterministic prompts."""
+    """Generate final prompts directly with an OpenAI-compatible Qwen-VL."""
 
     def __init__(
         self,
@@ -194,14 +192,16 @@ class Qwen25VLProvider:
         *,
         messages: list[dict[str, Any]],
         temperature: float,
+        force_json_response: bool,
     ) -> _QwenCompletion:
         payload = {
             "model": self.config.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": self.config.max_tokens,
-            "response_format": {"type": "json_object"},
         }
+        if force_json_response:
+            payload["response_format"] = {"type": "json_object"}
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
@@ -229,36 +229,38 @@ class Qwen25VLProvider:
         *,
         context: QwenVisualContext,
         images: list[QwenImageInput],
+        custom_instruction: str | None = None,
     ) -> QwenGenerationResult:
         if not images:
             raise ValueError(
-                "Qwen2.5-VL generation requires at least one image"
+                "Qwen-VL generation requires at least one image"
             )
         total_started = time.perf_counter()
         generation_started = time.perf_counter()
         completion = self._complete(
-            messages=build_visual_facts_messages(
+            messages=build_direct_prompt_messages(
                 context,
+                custom_instruction=custom_instruction,
                 images=images,
             ),
-            temperature=self.config.facts_temperature,
+            temperature=self.config.prompts_temperature,
+            force_json_response=custom_instruction is None,
         )
         generation_ms = (
             time.perf_counter() - generation_started
         ) * 1000
-        facts = parse_visual_facts(completion.content)
-        prompt_set = ground_prompt_set(facts=facts)
+        prompt_set = parse_prompt_set(completion.content)
         return QwenGenerationResult(
-            facts=facts,
+            facts=None,
             prompt_set=prompt_set,
             provider="vllm-openai-compatible",
             model=self.config.model,
-            facts_prompt_version=QWEN_FACTS_PROMPT_VERSION,
+            facts_prompt_version="not-used-direct-generation",
             enrichment_prompt_version=QWEN_ENRICHMENT_PROMPT_VERSION,
             timings_ms={
                 "model_calls": 1,
                 "generation_call_ms": round(generation_ms, 3),
-                "facts_call_ms": round(generation_ms, 3),
+                "prompt_call_ms": round(generation_ms, 3),
                 "total_ms": round(
                     (time.perf_counter() - total_started) * 1000,
                     3,
@@ -272,43 +274,38 @@ class Qwen25VLProvider:
         *,
         context: QwenJointVisualContext,
         images: list[QwenImageInput],
+        custom_instruction: str | None = None,
     ) -> QwenGenerationResult:
         if not images:
             raise ValueError(
-                "joint Qwen2.5-VL generation requires images"
+                "joint Qwen-VL generation requires images"
             )
         total_started = time.perf_counter()
-        facts_started = time.perf_counter()
+        generation_started = time.perf_counter()
         completion = self._complete(
-            messages=build_joint_visual_facts_messages(
+            messages=build_direct_joint_prompt_messages(
                 context,
+                custom_instruction=custom_instruction,
                 images=images,
             ),
-            temperature=self.config.facts_temperature,
+            temperature=self.config.prompts_temperature,
+            force_json_response=custom_instruction is None,
         )
-        facts_ms = (time.perf_counter() - facts_started) * 1000
-        expected_task_ids = [
-            target.task_id for target in context.targets
-        ]
-        facts = parse_joint_visual_facts(
-            completion.content,
-            expected_task_ids=expected_task_ids,
-        )
-        prompt_set = ground_joint_prompt_set(
-            facts=facts,
-        )
+        generation_ms = (time.perf_counter() - generation_started) * 1000
+        prompt_set = parse_prompt_set(completion.content)
         return QwenGenerationResult(
-            facts=facts,
+            facts=None,
             prompt_set=prompt_set,
             provider="vllm-openai-compatible",
             model=self.config.model,
-            facts_prompt_version=QWEN_JOINT_FACTS_PROMPT_VERSION,
+            facts_prompt_version="not-used-direct-generation",
             enrichment_prompt_version=(
                 QWEN_JOINT_ENRICHMENT_PROMPT_VERSION
             ),
             timings_ms={
                 "model_calls": 1,
-                "facts_call_ms": round(facts_ms, 3),
+                "generation_call_ms": round(generation_ms, 3),
+                "prompt_call_ms": round(generation_ms, 3),
                 "total_ms": round(
                     (time.perf_counter() - total_started) * 1000,
                     3,

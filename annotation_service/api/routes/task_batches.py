@@ -176,6 +176,9 @@ def build_task_batches_router(
                     store.create_prompt_enrichment_operation,
                     task_id=item["task_id"],
                     expected_version=item["expected_version"],
+                    custom_instruction=item["custom_instruction"],
+                    include_mask=item["include_mask"],
+                    include_crop=item["include_crop"],
                 )
                 items.append(
                     _accepted_item(item["task_id"], operation)

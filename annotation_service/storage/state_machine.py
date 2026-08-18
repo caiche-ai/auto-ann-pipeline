@@ -9,11 +9,12 @@ TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
         {
             TaskStatus.ANNOTATING,
             TaskStatus.REVIEW_PENDING,
+            TaskStatus.ACCEPTED,
             TaskStatus.REJECTED,
         }
     ),
     TaskStatus.ANNOTATING: frozenset(
-        {TaskStatus.REVIEW_PENDING, TaskStatus.REJECTED}
+        {TaskStatus.REVIEW_PENDING, TaskStatus.ACCEPTED, TaskStatus.REJECTED}
     ),
     TaskStatus.REVIEW_PENDING: frozenset(
         {

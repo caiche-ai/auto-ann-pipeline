@@ -3,23 +3,26 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
+import shutil
 import tempfile
 import threading
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from ..api.errors import ServiceError, VersionConflictError
 from ..storage.repository import AnnotationStore, sha256_file
-from ..storage.validation import validate_annotation_for_submission
 
 
 SPLITS = ("train", "val", "golden")
-BUILDER_VERSION = "reasonseg-release-v1"
+BUILDER_VERSION = "reasonseg-release-v2"
 LOGGER = logging.getLogger(__name__)
+UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def split_for_group(group_id: str, policy: dict[str, Any]) -> str:
@@ -54,7 +57,6 @@ def _export_shapes(
     height: int,
 ) -> list[dict[str, Any]]:
     exported = []
-    has_target = False
     for shape in shapes:
         label = shape["label"]
         if label not in {"target", "ignore"}:
@@ -66,14 +68,7 @@ def _export_shapes(
             ]
             for point in shape["points"]
         ]
-        if len(points) < 3 or _polygon_area(points) <= 0:
-            raise ValueError(
-                "release polygon collapses after integer conversion"
-            )
-        has_target = has_target or label == "target"
         exported.append({"label": label, "points": points})
-    if not has_target:
-        raise ValueError("release sample has no target polygon")
     return exported
 
 
@@ -97,6 +92,98 @@ def _write_jpeg(source: Path, destination: Path) -> None:
             optimize=False,
             progressive=False,
         )
+
+
+def _write_grounding_dino_boxes(
+    source: Path,
+    destination: Path,
+    detections: list[dict[str, Any]],
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as image:
+        rendered = image.convert("RGB")
+    draw = ImageDraw.Draw(rendered)
+    line_width = max(2, round(min(rendered.size) / 300))
+    for detection in detections:
+        box = detection.get("box_xyxy") or []
+        if len(box) != 4:
+            continue
+        coordinates = tuple(float(value) for value in box)
+        draw.rectangle(coordinates, outline=(255, 40, 40), width=line_width)
+        label = str(detection.get("entity") or "target")
+        draw.text(
+            (coordinates[0] + line_width, coordinates[1] + line_width),
+            label,
+            fill=(255, 40, 40),
+        )
+    rendered.save(destination, format="PNG")
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _copy_process_artifact(
+    artifact: dict[str, Any],
+    destination: Path,
+) -> None:
+    source = Path(artifact["path"])
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    expected_sha256 = str(artifact["sha256"])
+    if sha256_file(source) != expected_sha256:
+        raise ValueError(f"release process artifact checksum changed: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, destination)
+
+
+def _artifact_manifest_record(
+    artifact: dict[str, Any],
+    *,
+    file_path: str,
+) -> dict[str, Any]:
+    return {
+        "file": file_path,
+        "artifact_id": artifact["artifact_id"],
+        "operation_id": artifact.get("operation_id"),
+        "media_type": artifact["media_type"],
+        "sha256": artifact["sha256"],
+        "size_bytes": artifact["size_bytes"],
+        "width": artifact["width"],
+        "height": artifact["height"],
+        "metadata": artifact["metadata"],
+        "created_at": artifact["created_at"],
+    }
+
+
+def _source_filename(snapshot: dict[str, Any]) -> str:
+    metadata = snapshot.get("asset_metadata") or {}
+    return str(
+        metadata.get("original_filename")
+        or metadata.get("filename")
+        or snapshot.get("asset_source_id")
+        or f"image-{snapshot['image_sha256'][:12]}"
+    )
+
+
+def _filename_prefix(source_filename: str) -> str:
+    basename = source_filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = Path(basename).stem
+    normalized = unicodedata.normalize("NFC", stem)
+    normalized = UNSAFE_FILENAME.sub("_", normalized).strip(". ")
+    if not normalized:
+        normalized = "image"
+    return normalized[:120].rstrip(". ") or "image"
 
 
 def _write_deterministic_zip(source_root: Path, archive_path: Path) -> None:
@@ -127,6 +214,92 @@ class ReleaseBuildFiles:
     counts: dict[str, int]
 
 
+def write_sample_directory(
+    *,
+    snapshot: dict[str, Any],
+    sample_root: Path,
+    prefix: str,
+    require_process_artifacts: bool = False,
+) -> list[Path]:
+    """Write one submitted sample in the user-facing six-file layout."""
+
+    annotation = snapshot["annotation"]
+    process_artifacts = snapshot.get("process_artifacts", {})
+    required = ("sam_mask", "sam_overlay")
+    missing = [name for name in required if name not in process_artifacts]
+    if require_process_artifacts and missing:
+        raise ValueError(
+            "submitted sample is missing required process artifacts: "
+            + ", ".join(missing)
+        )
+
+    image_path = sample_root / f"{prefix}.jpg"
+    lisa_path = sample_root / f"{prefix}_lisa.json"
+    grounding_path = sample_root / f"{prefix}_grounding-dino.json"
+    bbox_path = sample_root / f"{prefix}_grounding-dino-boxes.png"
+    mask_path = sample_root / f"{prefix}_sam-mask.png"
+    overlay_path = sample_root / f"{prefix}_sam-overlay.png"
+    _write_jpeg(Path(snapshot["image_path"]), image_path)
+    _write_json(
+        lisa_path,
+        {
+            "shapes": _export_shapes(
+                annotation["shapes"],
+                width=int(snapshot["width"]),
+                height=int(snapshot["height"]),
+            ),
+            "text": [item["text"] for item in annotation["prompts"]],
+            "is_sentence": True,
+            "source": {
+                "sample_id": snapshot["task_id"],
+                "sample_key": snapshot["category"],
+                "group_id": snapshot["group_id"],
+            },
+        },
+    )
+    provenance = snapshot["provenance"]
+    selected_detection_ids = provenance.get("source_detection_ids") or []
+    if not selected_detection_ids and provenance.get("source_detection_id"):
+        selected_detection_ids = [provenance["source_detection_id"]]
+    _write_json(
+        grounding_path,
+        {
+            "schema_version": 1,
+            "task_id": snapshot["task_id"],
+            "job_id": snapshot["job_id"],
+            "asset_id": snapshot["asset_id"],
+            "model": provenance.get("grounding_dino_version"),
+            "prompt_version": provenance.get(
+                "grounding_dino_prompt_version"
+            ),
+            "prompt": provenance.get("grounding_prompt"),
+            "thresholds": provenance.get("grounding_dino_thresholds"),
+            "selected_detection_ids": selected_detection_ids,
+            "detections": snapshot.get("grounding_dino_detections", []),
+        },
+    )
+    artifact_destinations = {
+        "grounding_dino_bbox_image": bbox_path,
+        "sam_mask": mask_path,
+        "sam_overlay": overlay_path,
+    }
+    written = [image_path, lisa_path, grounding_path]
+    if "grounding_dino_bbox_image" not in process_artifacts:
+        _write_grounding_dino_boxes(
+            Path(snapshot["image_path"]),
+            bbox_path,
+            snapshot.get("grounding_dino_detections", []),
+        )
+        written.append(bbox_path)
+    for name, destination in artifact_destinations.items():
+        artifact = process_artifacts.get(name)
+        if artifact is None:
+            continue
+        _copy_process_artifact(artifact, destination)
+        written.append(destination)
+    return written
+
+
 def build_release_files(
     *,
     release: dict[str, Any],
@@ -136,29 +309,35 @@ def build_release_files(
     if not snapshots:
         raise ValueError("release contains no accepted tasks")
     dataset_root = output_root / release["name"]
-    for split in SPLITS:
-        (dataset_root / split).mkdir(parents=True, exist_ok=True)
+    dataset_root.mkdir(parents=True, exist_ok=True)
 
     counts = {split: 0 for split in SPLITS}
+    process_counts = {
+        "grounding_dino_detections": 0,
+        "grounding_dino_bbox_images": 0,
+        "sam_masks": 0,
+        "sam_overlays": 0,
+    }
     manifest_items = []
     jsonl_items = []
     member_hashes: dict[str, str] = {}
+    prefix_counts: dict[str, int] = {}
     for snapshot in snapshots:
         annotation = snapshot["annotation"]
-        validate_annotation_for_submission(
-            annotation,
-            width=int(snapshot["width"]),
-            height=int(snapshot["height"]),
-            category=snapshot["category"],
-        )
         split = split_for_group(
             snapshot["group_id"],
             release["split_policy"],
         )
         counts[split] += 1
-        stem = f"{snapshot['task_id']}__{snapshot['category']}"
-        image_path = dataset_root / split / f"{stem}.jpg"
-        json_path = dataset_root / split / f"{stem}.json"
+        source_filename = _source_filename(snapshot)
+        base_prefix = _filename_prefix(source_filename)
+        prefix_key = base_prefix.casefold()
+        prefix_counts[prefix_key] = prefix_counts.get(prefix_key, 0) + 1
+        occurrence = prefix_counts[prefix_key]
+        prefix = base_prefix if occurrence == 1 else f"{base_prefix}_{occurrence}"
+        sample_root = dataset_root / prefix
+        image_path = sample_root / f"{prefix}.jpg"
+        json_path = sample_root / f"{prefix}_lisa.json"
         _write_jpeg(snapshot["image_path"], image_path)
         prompts = [item["text"] for item in annotation["prompts"]]
         reasonseg = {
@@ -175,34 +354,110 @@ def build_release_files(
                 "group_id": snapshot["group_id"],
             },
         }
-        json_path.write_text(
-            json.dumps(
-                reasonseg,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            + "\n",
-            encoding="utf-8",
+        _write_json(json_path, reasonseg)
+
+        provenance = snapshot["provenance"]
+        selected_detection_ids = provenance.get("source_detection_ids") or []
+        if not selected_detection_ids and provenance.get("source_detection_id"):
+            selected_detection_ids = [provenance["source_detection_id"]]
+        detections = snapshot.get("grounding_dino_detections", [])
+        grounding_dino_path = sample_root / f"{prefix}_grounding-dino.json"
+        _write_json(
+            grounding_dino_path,
+            {
+                "schema_version": 1,
+                "task_id": snapshot["task_id"],
+                "job_id": snapshot["job_id"],
+                "asset_id": snapshot["asset_id"],
+                "model": provenance.get("grounding_dino_version"),
+                "prompt_version": provenance.get(
+                    "grounding_dino_prompt_version"
+                ),
+                "prompt": provenance.get("grounding_prompt"),
+                "thresholds": provenance.get("grounding_dino_thresholds"),
+                "selected_detection_ids": selected_detection_ids,
+                "detections": detections,
+            },
         )
+        process_counts["grounding_dino_detections"] += len(detections)
+
+        process_files: dict[str, Any] = {
+            "grounding_dino": {
+                "detections": grounding_dino_path.relative_to(
+                    dataset_root
+                ).as_posix(),
+                "detection_count": len(detections),
+                "selected_detection_ids": selected_detection_ids,
+                "bbox_image": None,
+            },
+            "sam": {"mask": None, "overlay": None},
+        }
+        artifact_destinations = {
+            "grounding_dino_bbox_image": (
+                "grounding_dino",
+                "bbox_image",
+                sample_root / f"{prefix}_grounding-dino-boxes.png",
+            ),
+            "sam_mask": (
+                "sam",
+                "mask",
+                sample_root / f"{prefix}_sam-mask.png",
+            ),
+            "sam_overlay": (
+                "sam",
+                "overlay",
+                sample_root / f"{prefix}_sam-overlay.png",
+            ),
+        }
+        process_artifacts = snapshot.get("process_artifacts", {})
+        for artifact_name, (
+            process_name,
+            record_name,
+            destination,
+        ) in artifact_destinations.items():
+            artifact = process_artifacts.get(artifact_name)
+            if artifact is None:
+                continue
+            _copy_process_artifact(artifact, destination)
+            relative = destination.relative_to(dataset_root).as_posix()
+            process_files[process_name][record_name] = (
+                _artifact_manifest_record(artifact, file_path=relative)
+            )
+            if artifact_name == "grounding_dino_bbox_image":
+                process_counts["grounding_dino_bbox_images"] += 1
+            elif artifact_name == "sam_mask":
+                process_counts["sam_masks"] += 1
+            elif artifact_name == "sam_overlay":
+                process_counts["sam_overlays"] += 1
+
         image_relative = image_path.relative_to(dataset_root).as_posix()
         json_relative = json_path.relative_to(dataset_root).as_posix()
         image_digest = sha256_file(image_path)
         json_digest = sha256_file(json_path)
         member_hashes[image_relative] = image_digest
         member_hashes[json_relative] = json_digest
+        member_hashes[
+            grounding_dino_path.relative_to(dataset_root).as_posix()
+        ] = sha256_file(grounding_dino_path)
+        for artifact_group in process_files.values():
+            for record in artifact_group.values():
+                if not isinstance(record, dict) or "file" not in record:
+                    continue
+                member_hashes[record["file"]] = record["sha256"]
         manifest_items.append(
             {
                 "task_id": snapshot["task_id"],
                 "task_version": snapshot["version"],
                 "asset_id": snapshot["asset_id"],
+                "source_filename": source_filename,
+                "file_prefix": prefix,
                 "category": snapshot["category"],
                 "group_id": snapshot["group_id"],
-                "split": split,
                 "image": image_relative,
                 "annotation": json_relative,
                 "image_sha256": image_digest,
                 "annotation_sha256": json_digest,
+                "process": process_files,
             }
         )
         jsonl_items.append(
@@ -239,31 +494,20 @@ def build_release_files(
         "counts": counts,
         "split_policy": release["split_policy"],
         "task_count": len(snapshots),
+        "process_counts": process_counts,
     }
-    summary_path = dataset_root / "build_summary.json"
-    summary_path.write_text(
-        json.dumps(
-            summary,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     card_path = dataset_root / "dataset_card.md"
     card_path.write_text(
         f"# {release['name']}\n\n"
         "ReasonSeg construction-safety annotation release.\n\n"
         f"- Builder: `{BUILDER_VERSION}`\n"
         f"- Tasks: {len(snapshots)}\n"
-        f"- Train: {counts['train']}\n"
-        f"- Val: {counts['val']}\n"
-        f"- Golden: {counts['golden']}\n"
-        "- Split isolation key: `group_id`\n",
+        f"- GroundingDINO detections: "
+        f"{process_counts['grounding_dino_detections']}\n"
+        f"- SAM masks: {process_counts['sam_masks']}\n",
         encoding="utf-8",
     )
-    for path in (jsonl_path, summary_path, card_path):
+    for path in (jsonl_path, card_path):
         member_hashes[
             path.relative_to(dataset_root).as_posix()
         ] = sha256_file(path)

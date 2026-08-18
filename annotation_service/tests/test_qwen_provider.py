@@ -36,23 +36,26 @@ PROMPTS = {
 
 
 class FakeTransport:
-    def __init__(self, facts=None, prompts=None):
+    def __init__(self, facts=None, prompts=None, raw_content=None):
         self.calls = []
         self.facts = FACTS if facts is None else facts
         self.prompts = PROMPTS if prompts is None else prompts
+        self.raw_content = raw_content
 
     def __call__(self, url, headers, body, timeout):
         payload = json.loads(body)
         self.calls.append((url, headers, payload, timeout))
-        content = self.facts if len(self.calls) == 1 else self.prompts
+        content = {"prompts": self.prompts["prompts"]}
+        assistant_content = (
+            self.raw_content
+            if self.raw_content is not None
+            else json.dumps(content, ensure_ascii=False)
+        )
         return {
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps(
-                            content,
-                            ensure_ascii=False,
-                        )
+                        "content": assistant_content
                     }
                 }
             ],
@@ -104,7 +107,11 @@ class QwenProviderTest(unittest.TestCase):
             transport.calls[0][2]["model"],
             "qwen2.5-vl-7b-instruct",
         )
-        first_content = transport.calls[0][2]["messages"][1]["content"]
+        self.assertEqual(
+            transport.calls[0][2]["response_format"],
+            {"type": "json_object"},
+        )
+        first_content = transport.calls[0][2]["messages"][0]["content"]
         self.assertTrue(
             any(item["type"] == "image_url" for item in first_content)
         )
@@ -117,6 +124,69 @@ class QwenProviderTest(unittest.TestCase):
         self.assertEqual(
             result.as_dict()["provenance"]["qwen_model"],
             "qwen2.5-vl-7b-instruct",
+        )
+
+    def test_custom_prompt_is_not_wrapped_or_extended(self):
+        transport = FakeTransport()
+        provider = Qwen25VLProvider(
+            QwenProviderConfig(base_url="http://qwen25vl:8000/v1"),
+            transport=transport,
+        )
+        custom_prompt = "按我的格式生成一条结果。"
+
+        provider.generate(
+            context=QwenVisualContext(
+                asset_id="asset-1",
+                category="safe",
+                target_box_xyxy=[1, 1, 2, 2],
+            ),
+            images=[
+                QwenImageInput(
+                    label="原图",
+                    media_type="image/png",
+                    data_url="data:image/png;base64,aQ==",
+                )
+            ],
+            custom_instruction=custom_prompt,
+        )
+
+        messages = transport.calls[0][2]["messages"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(
+            messages[0]["content"][0],
+            {"type": "text", "text": custom_prompt},
+        )
+        self.assertEqual(len(messages[0]["content"]), 2)
+        self.assertNotIn("response_format", transport.calls[0][2])
+
+    def test_custom_prompt_accepts_plain_text_model_response(self):
+        transport = FakeTransport(
+            raw_content="分割画面中央的作业人员。\n分割右侧施工设备。"
+        )
+        provider = Qwen25VLProvider(
+            QwenProviderConfig(base_url="http://qwen25vl:8000/v1"),
+            transport=transport,
+        )
+
+        result = provider.generate(
+            context=QwenVisualContext(
+                asset_id="asset-1",
+                category="safe",
+                target_box_xyxy=[1, 1, 2, 2],
+            ),
+            images=[
+                QwenImageInput(
+                    label="原图",
+                    media_type="image/png",
+                    data_url="data:image/png;base64,aQ==",
+                )
+            ],
+            custom_instruction="生成两条分割提示词，每行一条。",
+        )
+
+        self.assertEqual(
+            [item.text for item in result.prompt_set.prompts],
+            ["分割画面中央的作业人员。", "分割右侧施工设备。"],
         )
 
     def test_missing_assistant_content_is_rejected(self):
@@ -203,22 +273,22 @@ class QwenProviderTest(unittest.TestCase):
         )
 
         self.assertEqual(len(transport.calls), 1)
-        self.assertIn(
-            "多目标联合视觉事实提取器",
-            transport.calls[0][2]["messages"][0]["content"],
-        )
+        prompt_text = transport.calls[0][2]["messages"][0]["content"][0][
+            "text"
+        ]
+        self.assertNotIn("多目标联合视觉事实提取器", prompt_text)
         provenance = result.as_dict()["provenance"]
         self.assertEqual(
             provenance["qwen_facts_prompt_version"],
-            "construction-joint-visible-facts-v2",
+            "not-used-direct-generation",
         )
         self.assertEqual(
             provenance["qwen_enrichment_prompt_version"],
-            "construction-joint-prompts-3-2-1-grounded-v6",
+            "user-instruction-flexible-output-joint-v2",
         )
         self.assertEqual(result.timings_ms["model_calls"], 1)
 
-    def test_joint_generation_rejects_omitted_task_target(self):
+    def test_joint_generation_does_not_require_intermediate_facts(self):
         incomplete_facts = {
             **FACTS,
             "instance_count": 2,
@@ -261,8 +331,7 @@ class QwenProviderTest(unittest.TestCase):
             ],
         )
 
-        with self.assertRaises(QwenContractError):
-            provider.generate_joint(
+        result = provider.generate_joint(
                 context=context,
                 images=[
                     QwenImageInput(
@@ -272,6 +341,7 @@ class QwenProviderTest(unittest.TestCase):
                     )
                 ],
             )
+        self.assertEqual(len(result.prompt_set.prompts), 6)
 
 
 if __name__ == "__main__":

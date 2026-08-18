@@ -56,8 +56,8 @@ def build_task_groups_router(
         422: {
             "model": ErrorPayload,
             "description": (
-                "Tasks are invalid, use different images, or lack mask/crop "
-                "artifacts."
+                "Tasks are invalid, use different images, or lack a selected "
+                "optional image artifact."
             ),
         },
         503: {
@@ -91,6 +91,9 @@ def build_task_groups_router(
             require_storage().create_joint_prompt_enrichment_operation,
             items=payload["items"],
             mode=payload["mode"],
+            custom_instruction=payload["custom_instruction"],
+            include_mask=payload["include_mask"],
+            include_crop=payload["include_crop"],
         )
         return {
             "task_group_id": operation["task_group_id"],

@@ -61,13 +61,14 @@ class AssetApiTest(unittest.TestCase):
         *,
         group_id: str = "site01:video03",
         metadata_json: str = '{"camera":"north"}',
+        filename: str = "sample.png",
         headers: dict[str, str] | None = None,
     ):
         return self.client.post(
             "/v1/annotation/assets",
             files={
                 "file": (
-                    "sample.png",
+                    filename,
                     raw if raw is not None else png_bytes(),
                     "image/png",
                 )
@@ -88,7 +89,10 @@ class AssetApiTest(unittest.TestCase):
         self.assertEqual(payload["width"], 3)
         self.assertEqual(payload["height"], 2)
         self.assertEqual(payload["group_id"], "site01:video03")
-        self.assertEqual(payload["metadata"], {"camera": "north"})
+        self.assertEqual(
+            payload["metadata"],
+            {"camera": "north", "original_filename": "sample.png"},
+        )
         self.assertIsNone(payload["duplicate_of"])
 
         detail = self.client.get(

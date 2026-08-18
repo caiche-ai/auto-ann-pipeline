@@ -3,6 +3,8 @@ import json
 import unittest
 
 from annotation_service.pipeline.qwen.contract import (
+    DEFAULT_QWEN_PROMPT_CONTEXT_PLACEHOLDER,
+    DEFAULT_QWEN_PROMPT_TEMPLATE,
     QwenContractError,
     QwenImageInput,
     QwenJointVisualFacts,
@@ -11,6 +13,7 @@ from annotation_service.pipeline.qwen.contract import (
     QwenJointVisualContext,
     QwenVisualContext,
     QwenVisualFacts,
+    build_direct_prompt_messages,
     build_joint_prompt_enrichment_messages,
     build_joint_prompt_review_messages,
     build_joint_visual_facts_messages,
@@ -107,21 +110,95 @@ class QwenContractTest(unittest.TestCase):
         with self.assertRaises(QwenContractError):
             parse_visual_facts(json.dumps(duplicate, ensure_ascii=False))
 
-    def test_prompt_set_requires_exact_three_two_one(self):
+    def test_prompt_set_allows_user_defined_count_and_types(self):
         parsed = parse_prompt_set(
             json.dumps(prompt_payload(), ensure_ascii=False)
         )
         self.assertEqual(len(parsed.prompts), 6)
 
-        invalid = prompt_payload()
-        invalid["prompts"][5]["type"] = "visual"
-        with self.assertRaises(QwenContractError):
-            parse_prompt_set(json.dumps(invalid, ensure_ascii=False))
+        custom = prompt_payload()
+        custom["prompts"] = custom["prompts"][:1]
+        parsed_custom = parse_prompt_set(
+            json.dumps(custom, ensure_ascii=False)
+        )
+        self.assertEqual(len(parsed_custom.prompts), 1)
 
         duplicate = prompt_payload()
         duplicate["prompts"][1]["text"] = duplicate["prompts"][0]["text"]
-        with self.assertRaises(QwenContractError):
-            parse_prompt_set(json.dumps(duplicate, ensure_ascii=False))
+        deduplicated = parse_prompt_set(
+            json.dumps(duplicate, ensure_ascii=False)
+        )
+        self.assertEqual(len(deduplicated.prompts), 5)
+
+    def test_prompt_set_normalizes_plain_text_lines(self):
+        parsed = parse_prompt_set(
+            "1. 分割画面中央的人员。\n- 标出右侧的施工设备。"
+        )
+
+        self.assertEqual(
+            [item.text for item in parsed.prompts],
+            ["分割画面中央的人员。", "标出右侧的施工设备。"],
+        )
+        self.assertEqual(
+            [item.prompt_id for item in parsed.prompts],
+            ["prompt-1", "prompt-2"],
+        )
+        self.assertTrue(
+            all(item.type.value == "visual" for item in parsed.prompts)
+        )
+
+    def test_prompt_set_normalizes_common_json_shapes(self):
+        payloads = (
+            ({"prompt": "分割目标人员。"}, ["分割目标人员。"]),
+            (
+                {"prompts": ["分割人员。", "分割设备。"]},
+                ["分割人员。", "分割设备。"],
+            ),
+            (
+                [
+                    {"text": "分割人员。"},
+                    {
+                        "id": "custom-id",
+                        "type": "unknown",
+                        "content": "分割设备。",
+                    },
+                ],
+                ["分割人员。", "分割设备。"],
+            ),
+        )
+        for payload, expected in payloads:
+            with self.subTest(payload=payload):
+                parsed = parse_prompt_set(
+                    json.dumps(payload, ensure_ascii=False)
+                )
+                self.assertEqual(
+                    [item.text for item in parsed.prompts],
+                    expected,
+                )
+
+    def test_prompt_set_repairs_ids_truncates_and_limits_items(self):
+        payload = {
+            "prompts": [
+                {
+                    "prompt_id": "same",
+                    "type": "visual",
+                    "text": f"提示词{index}" + "字" * 1100,
+                }
+                for index in range(55)
+            ]
+        }
+
+        parsed = parse_prompt_set(json.dumps(payload, ensure_ascii=False))
+
+        self.assertEqual(len(parsed.prompts), 50)
+        self.assertEqual(len({item.prompt_id for item in parsed.prompts}), 50)
+        self.assertTrue(all(len(item.text) <= 1000 for item in parsed.prompts))
+
+    def test_prompt_set_rejects_empty_or_non_text_response(self):
+        for raw in ("", "[]", '{"result": {"count": 0}}'):
+            with self.subTest(raw=raw):
+                with self.assertRaises(QwenContractError):
+                    parse_prompt_set(raw)
 
     def test_single_target_prompts_are_deterministically_grounded(self):
         facts = QwenVisualFacts(**facts_payload())
@@ -224,6 +301,62 @@ class QwenContractTest(unittest.TestCase):
                 "data:image/png;base64,"
             )
         )
+
+    def test_direct_custom_prompt_is_sent_verbatim_with_images_only(self):
+        custom_prompt = "  只返回一条中文分割提示词。\n不要添加其他要求。  "
+        image = QwenImageInput(
+            label="该标签不得进入模型文本",
+            media_type="image/png",
+            data_url="data:image/png;base64,aW1hZ2U=",
+        )
+
+        messages = build_direct_prompt_messages(
+            QwenVisualContext(
+                asset_id="asset-1",
+                category="helmet_missing",
+                target_box_xyxy=[1, 2, 3, 4],
+            ),
+            custom_instruction=custom_prompt,
+            images=[image],
+        )
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "user")
+        self.assertEqual(
+            messages[0]["content"],
+            [
+                {"type": "text", "text": custom_prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image.data_url},
+                },
+            ],
+        )
+
+    def test_direct_default_prompt_contains_current_full_template(self):
+        messages = build_direct_prompt_messages(
+            QwenVisualContext(
+                asset_id="asset-1",
+                category="helmet_missing",
+                target_box_xyxy=[1, 2, 3, 4],
+            ),
+            custom_instruction=None,
+            images=[],
+        )
+
+        prompt_text = messages[0]["content"][0]["text"]
+        self.assertNotIn(
+            DEFAULT_QWEN_PROMPT_CONTEXT_PLACEHOLDER,
+            prompt_text,
+        )
+        self.assertIn(
+            DEFAULT_QWEN_PROMPT_CONTEXT_PLACEHOLDER,
+            DEFAULT_QWEN_PROMPT_TEMPLATE,
+        )
+        self.assertIn("生成最终的图像分割 Prompt", prompt_text)
+        self.assertIn("helmet_missing", prompt_text)
+        self.assertIn('"prompt_id": "prompt-1"', prompt_text)
+        self.assertIn("所有 text 必须使用简体中文", prompt_text)
 
     def test_joint_messages_require_all_targets_and_relationship(self):
         context = QwenJointVisualContext(

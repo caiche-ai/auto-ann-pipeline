@@ -133,6 +133,13 @@ class TaskApiTest(unittest.TestCase):
         self.assertEqual(draft.json()["status"], "annotating")
         self.assertEqual(draft.json()["version"], 2)
 
+        for artifact_type in ("mask", "mask-overlay"):
+            self.store.store_artifact(
+                task_id=self.task["task_id"],
+                artifact_type=artifact_type,
+                data=png_bytes(),
+                media_type="image/png",
+            )
         submitted = self.client.post(
             f"/v1/annotation/tasks/{self.task['task_id']}/submit",
             json={
@@ -143,22 +150,8 @@ class TaskApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(submitted.status_code, 200, submitted.text)
-        self.assertEqual(submitted.json()["status"], "review_pending")
+        self.assertEqual(submitted.json()["status"], "accepted")
         self.assertEqual(submitted.json()["version"], 3)
-
-        accepted = self.client.post(
-            f"/v1/annotation/tasks/{self.task['task_id']}/review",
-            json={
-                "expected_version": 3,
-                "reviewer_id": "reviewer-1",
-                "decision": "accept",
-                "primary_result": "prompt_ok",
-                "comment": "accepted",
-            },
-        )
-        self.assertEqual(accepted.status_code, 200, accepted.text)
-        self.assertEqual(accepted.json()["status"], "accepted")
-        self.assertEqual(accepted.json()["version"], 4)
 
         versions = self.client.get(
             f"/v1/annotation/tasks/{self.task['task_id']}/versions"
@@ -166,7 +159,7 @@ class TaskApiTest(unittest.TestCase):
         self.assertEqual(versions.status_code, 200, versions.text)
         self.assertEqual(
             [item["change_kind"] for item in versions.json()["items"]],
-            ["generated", "draft", "submit", "review"],
+            ["generated", "draft", "submit"],
         )
         self.assertEqual(
             versions.json()["items"][2]["comment"],
@@ -177,13 +170,9 @@ class TaskApiTest(unittest.TestCase):
             f"/v1/annotation/tasks/{self.task['task_id']}/reviews"
         )
         self.assertEqual(reviews.status_code, 200, reviews.text)
-        self.assertEqual(len(reviews.json()["items"]), 1)
-        self.assertEqual(
-            reviews.json()["items"][0]["decision"],
-            "accept",
-        )
+        self.assertEqual(reviews.json()["items"], [])
 
-    def test_submit_rejects_incomplete_annotation(self):
+    def test_submit_accepts_incomplete_annotation_without_business_validation(self):
         incomplete = complete_annotation()
         incomplete["shapes"] = []
         saved = self.client.put(
@@ -203,11 +192,8 @@ class TaskApiTest(unittest.TestCase):
                 "primary_result": "mask_missing",
             },
         )
-        self.assertEqual(submitted.status_code, 422, submitted.text)
-        self.assertEqual(
-            submitted.json()["code"],
-            "annotation_validation_failed",
-        )
+        self.assertEqual(submitted.status_code, 200, submitted.text)
+        self.assertEqual(submitted.json()["status"], "accepted")
 
     def test_generated_task_can_be_invalidated_with_audit_version(self):
         invalidated = self.client.post(
@@ -404,12 +390,8 @@ class TaskApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(prompts.status_code, 202, prompts.text)
-        self.assertEqual(prompts.json()["accepted_count"], 1)
-        self.assertEqual(prompts.json()["rejected_count"], 1)
-        self.assertEqual(
-            prompts.json()["items"][1]["error"]["code"],
-            "validation_error",
-        )
+        self.assertEqual(prompts.json()["accepted_count"], 2)
+        self.assertEqual(prompts.json()["rejected_count"], 0)
 
         duplicated = self.client.post(
             "/v1/annotation/task-batches/prompt-enrichments",
@@ -540,6 +522,7 @@ class TaskApiTest(unittest.TestCase):
                     },
                 ],
                 "mode": "joint",
+                "include_crop": True,
             },
         )
         self.assertEqual(missing_crop.status_code, 422)
@@ -661,7 +644,7 @@ class TaskApiTest(unittest.TestCase):
         )
         self.assertEqual(repeated.status_code, 409, repeated.text)
 
-    def test_prompt_enrichment_requires_mask_and_current_version(self):
+    def test_prompt_enrichment_defaults_to_original_and_checks_version(self):
         missing_mask = self.client.post(
             (
                 f"/v1/annotation/tasks/{self.task['task_id']}"
@@ -669,7 +652,48 @@ class TaskApiTest(unittest.TestCase):
             ),
             json={"expected_version": 1},
         )
-        self.assertEqual(missing_mask.status_code, 422)
+        self.assertEqual(missing_mask.status_code, 202)
+        queued = self.client.get(
+            "/v1/annotation/operations/"
+            + missing_mask.json()["operation_id"]
+        )
+        self.assertEqual(queued.status_code, 200, queued.text)
+        self.assertFalse(queued.json()["result"])
+        stored = self.store.get_operation(
+            missing_mask.json()["operation_id"]
+        )
+        self.assertFalse(stored["request"]["include_mask"])
+        self.assertFalse(stored["request"]["include_crop"])
+        self.assertIsNone(stored["request"]["custom_instruction"])
+
+        custom_prompt = "  只发送这段自定义提示词。\n保留首尾空白。  "
+        custom = self.client.post(
+            (
+                f"/v1/annotation/tasks/{self.task['task_id']}"
+                "/prompt-enrichments"
+            ),
+            json={
+                "expected_version": 1,
+                "custom_instruction": custom_prompt,
+            },
+        )
+        self.assertEqual(custom.status_code, 202, custom.text)
+        custom_operation = self.store.get_operation(
+            custom.json()["operation_id"]
+        )
+        self.assertEqual(
+            custom_operation["request"]["custom_instruction"],
+            custom_prompt,
+        )
+
+        selected_missing_mask = self.client.post(
+            (
+                f"/v1/annotation/tasks/{self.task['task_id']}"
+                "/prompt-enrichments"
+            ),
+            json={"expected_version": 1, "include_mask": True},
+        )
+        self.assertEqual(selected_missing_mask.status_code, 422)
 
         self.store.store_artifact(
             task_id=self.task["task_id"],
@@ -686,7 +710,7 @@ class TaskApiTest(unittest.TestCase):
         )
         self.assertEqual(stale.status_code, 409)
 
-    def test_submit_rejects_duplicate_ids_and_boundary_coordinates(self):
+    def test_submit_skips_duplicate_and_boundary_business_validation(self):
         invalid = complete_annotation()
         invalid["shapes"].append(
             {
@@ -714,16 +738,8 @@ class TaskApiTest(unittest.TestCase):
                 "primary_result": "prompt_ok",
             },
         )
-        self.assertEqual(submitted.status_code, 422, submitted.text)
-        reasons = {
-            item["reason"] for item in submitted.json()["details"]
-        }
-        self.assertIn("shape_id values must be unique", reasons)
-        self.assertIn("prompt_id values must be unique", reasons)
-        self.assertIn(
-            "point must be inside the 10x10 image",
-            reasons,
-        )
+        self.assertEqual(submitted.status_code, 200, submitted.text)
+        self.assertEqual(submitted.json()["status"], "accepted")
 
     def test_task_cursor_and_artifact_download(self):
         second = self.store.create_task(

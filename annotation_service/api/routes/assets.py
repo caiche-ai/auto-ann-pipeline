@@ -91,6 +91,8 @@ def build_assets_router(
         ),
     ) -> dict[str, Any]:
         store = require_storage()
+        original_filename = (file.filename or "").replace("\\", "/")
+        original_filename = original_filename.rsplit("/", 1)[-1].strip()
         try:
             raw = await file.read(settings.max_image_bytes + 1)
         finally:
@@ -108,6 +110,11 @@ def build_assets_router(
                 metadata_json,
                 max_chars=settings.max_metadata_chars,
             )
+            if original_filename:
+                metadata = {
+                    **metadata,
+                    "original_filename": original_filename,
+                }
         except ValueError as exc:
             field = (
                 "metadata_json"

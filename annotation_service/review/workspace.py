@@ -157,7 +157,10 @@ def collect_task_export_snapshots(
                 "width": task["asset"]["width"],
                 "height": task["asset"]["height"],
                 "image_sha256": asset["sha256"],
+                "asset_source_id": asset["source_id"],
+                "asset_metadata": asset["metadata"],
                 "reviews": store.list_reviews(task["task_id"]),
+                **store.get_task_process_export_snapshot(task["task_id"]),
             }
         )
     return snapshots
