@@ -55,3 +55,11 @@ annotation_service.backup*/
 .idea/
 .DS_Store
 Thumbs.db
+
+# React frontend dependencies and generated output
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.run/
+/frontend/*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
