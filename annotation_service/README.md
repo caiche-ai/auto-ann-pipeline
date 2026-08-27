@@ -109,9 +109,26 @@ chmod 600 annotation_service/.env
 至少配置：
 
 - API：`ANNOTATION_API_KEY`、`ANNOTATION_STORAGE_ROOT`
-- GroundingDINO：源码、配置、checkpoint、离线 BERT 和 device
-- SAM：`ANNOTATION_SAM_CHECKPOINT`、model type、Python package 和 device
+- GroundingDINO：选择 `local` 时配置源码、checkpoint 和离线 BERT；选择
+  `remote` 时配置远程推理地址和密钥
+- SAM：选择 `local` 时配置 checkpoint；选择 `remote` 时配置远程推理地址和密钥
 - Qwen：`ANNOTATION_QWEN_BASE_URL`、`ANNOTATION_QWEN_MODEL`
+
+GroundingDINO 和 SAM 可以分别选择 Provider，默认均为 `local`：
+
+```env
+ANNOTATION_GROUNDING_DINO_PROVIDER=remote
+ANNOTATION_GROUNDING_DINO_REMOTE_BASE_URL=https://gpu.example.com:8010
+ANNOTATION_GROUNDING_DINO_REMOTE_API_KEY=<INFERENCE_API_KEY>
+
+ANNOTATION_SAM_PROVIDER=remote
+ANNOTATION_SAM_REMOTE_BASE_URL=https://gpu.example.com:8010
+ANNOTATION_SAM_REMOTE_API_KEY=<INFERENCE_API_KEY>
+```
+
+远程模式下，标注 Worker 继续在本地领取任务并写入 SQLite；远程服务只接收图片、
+Prompt 或 box，返回 detection 或 mask，不访问 `ANNOTATION_STORAGE_ROOT`。
+`*_REMOTE_BASE_URL` 填服务根地址，不要包含 `/v1/inference/...` 路径。
 
 延迟相关默认值：
 
@@ -184,6 +201,17 @@ annotation_service/
 `python -m annotation_service.pipeline.sam` 和
 `python -m annotation_service.pipeline.qwen` 启动。完整流水线入口为
 `python -m annotation_service.pipeline`。
+
+独立 GPU 推理服务通过下面的命令启动，同时提供 GroundingDINO 和 SAM：
+
+```bash
+python -m annotation_service.inference
+```
+
+默认监听 `8010`，提供 `/v1/inference/grounding-dino` 和
+`/v1/inference/sam`。使用 `ANNOTATION_INFERENCE_API_KEY` 鉴权；不要与面向标注
+用户的 `ANNOTATION_API_KEY` 共用。完整请求和响应契约见
+[`docs/inference_api.md`](../docs/inference_api.md)。
 
 ## 依赖
 

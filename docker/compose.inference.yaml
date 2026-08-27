@@ -1,0 +1,71 @@
+name: annotation-inference
+
+services:
+  inference:
+    image: ${ANNOTATION_INFERENCE_IMAGE:-annotation-inference:groundingdino-sam-v1}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      additional_contexts:
+        groundingdino_source: ${GROUNDING_DINO_SOURCE_HOST_PATH:?set GROUNDING_DINO_SOURCE_HOST_PATH}
+      args:
+        ANNOTATION_BASE_IMAGE: ${ANNOTATION_BASE_IMAGE:?set ANNOTATION_BASE_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: ${ANNOTATION_CONTAINER_UID:-1000}:${ANNOTATION_CONTAINER_GID:-1000}
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    env_file:
+      - ${ANNOTATION_ENV_FILE:-.env.inference}
+    environment:
+      ANNOTATION_GROUNDING_DINO_ROOT: /opt/GroundingDINO
+      ANNOTATION_GROUNDING_DINO_CONFIG: /models/groundingdino/GroundingDINO_SwinT_OGC.py
+      ANNOTATION_GROUNDING_DINO_CHECKPOINT: /models/groundingdino/groundingdino_swint_ogc.pth
+      ANNOTATION_GROUNDING_DINO_BERT: /models/groundingdino/text_encoder/bert-base-uncased
+      ANNOTATION_GROUNDING_DINO_DEVICE: cuda
+      ANNOTATION_SAM_CHECKPOINT: /models/sam/sam_vit_h_4b8939.pth
+      ANNOTATION_SAM_DEVICE: cuda
+      CUDA_VISIBLE_DEVICES: ${ANNOTATION_CUDA_VISIBLE_DEVICES:-0}
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      HOME: /tmp/annotation-home
+      HF_HOME: /tmp/annotation-home/huggingface
+      TRANSFORMERS_CACHE: /tmp/annotation-home/huggingface
+      XDG_CACHE_HOME: /tmp/annotation-home/cache
+    volumes:
+      - ${GROUNDING_DINO_MODEL_HOST_PATH:?set GROUNDING_DINO_MODEL_HOST_PATH}:/models/groundingdino:ro
+      - ${ANNOTATION_SAM_MODEL_HOST_PATH:?set ANNOTATION_SAM_MODEL_HOST_PATH}:/models/sam:ro
+    gpus: all
+    shm_size: 1gb
+    ports:
+      - ${ANNOTATION_INFERENCE_BIND_ADDRESS:-0.0.0.0}:${ANNOTATION_INFERENCE_PORT:-8010}:8010
+    command:
+      - python3
+      - -m
+      - annotation_service.inference
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import os, urllib.request;
+          request = urllib.request.Request(
+          "http://127.0.0.1:8010/ready",
+          headers={"X-Inference-API-Key": os.environ["ANNOTATION_INFERENCE_API_KEY"]});
+          assert urllib.request.urlopen(request, timeout=3).status == 200
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "3"
+    stop_grace_period: 90s

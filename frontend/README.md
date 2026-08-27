@@ -40,3 +40,14 @@ npm run build
 构建结果输出到 `frontend/dist/`。部署到独立域名时，应将
 `VITE_API_BASE_URL` 设置为 API 公网地址，并在后端
 `ANNOTATION_CORS_ORIGINS` 中加入前端来源。
+
+仓库提供的生产 Compose 已经使用 `docker/Dockerfile.frontend` 完成构建，并由
+Nginx 同源代理后端，无需设置 `VITE_API_BASE_URL` 或 CORS：
+
+```bash
+docker compose --env-file docker/.env -f docker/compose.yaml up -d --build
+```
+
+页面默认位于 `http://<服务器>:3000`。连接设置中的 API 地址保持为空，只填写
+API Key。React Router 的未知路径会回退到 `index.html`，刷新任务详情页不会返回
+404；带内容哈希的 `/assets/` 文件使用长期缓存。

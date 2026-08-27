@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/opt/annotation-service
+
+WORKDIR /opt/annotation-service
+
+COPY annotation_service/requirements.txt /tmp/requirements.txt
+COPY docker/requirements-remote.txt /tmp/requirements-remote.txt
+RUN python3 -m pip install \
+        -r /tmp/requirements.txt \
+        -r /tmp/requirements-remote.txt \
+    && rm -f /tmp/requirements.txt /tmp/requirements-remote.txt
+
+COPY annotation_service /opt/annotation-service/annotation_service
+COPY docker/start_all.sh /opt/annotation-service/docker/start_all.sh
+
+RUN useradd --create-home --uid 1000 annotation \
+    && chown -R annotation:annotation /opt/annotation-service
+
+USER annotation
+
+EXPOSE 8001
+
+CMD ["sh", "/opt/annotation-service/docker/start_all.sh"]

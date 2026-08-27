@@ -93,9 +93,7 @@ class GroundingDINOModelConfig:
     model_version: str = "groundingdino-swint-ogc"
     prompt_version: str = "free-form-v1"
     prompt_normalization_mode: PromptNormalizationMode = "terminal_period"
-    prompt_normalization_profile: PromptNormalizationProfile = (
-        "construction_safety_v1"
-    )
+    prompt_normalization_profile: PromptNormalizationProfile = "construction_safety_v1"
     prompt_translation_failure_policy: PromptTranslationFailurePolicy = (
         "fallback_canonical_terms"
     )
@@ -148,8 +146,7 @@ class DetectionPredictor(Protocol):
             PromptTranslationFailurePolicy | None
         ) = None,
         prepared_prompt: GroundingPromptPreparation | None = None,
-    ) -> list[GroundingDINODetection]:
-        ...
+    ) -> list[GroundingDINODetection]: ...
 
 
 def entities_for_categories(
@@ -172,9 +169,7 @@ def entities_for_categories(
 
 def build_caption(entities: Sequence[str]) -> str:
     normalized = [
-        value.strip().strip(".")
-        for value in entities
-        if value.strip().strip(".")
+        value.strip().strip(".") for value in entities if value.strip().strip(".")
     ]
     if not normalized:
         raise ValueError("GroundingDINO caption must not be empty")
@@ -190,6 +185,55 @@ def normalize_grounding_prompt(prompt: str) -> str:
     ).normalized_prompt
 
 
+def prepare_grounding_prompt(
+    *,
+    prompt: str | None = None,
+    categories: Sequence[str | AnnotationCategory] | None = None,
+    prompt_normalization_mode: PromptNormalizationMode = "terminal_period",
+    prompt_normalization_profile: PromptNormalizationProfile = (
+        "construction_safety_v1"
+    ),
+    prompt_translation_failure_policy: PromptTranslationFailurePolicy = (
+        "fallback_canonical_terms"
+    ),
+    prompt_translator: GroundingPromptTranslator | None = None,
+) -> GroundingPromptPreparation:
+    if prompt is not None:
+        prompt_result = normalize_prompt_result(
+            prompt,
+            mode=prompt_normalization_mode,
+            profile=prompt_normalization_profile,
+            translator=prompt_translator,
+            translation_failure_policy=prompt_translation_failure_policy,
+        )
+        return GroundingPromptPreparation(
+            caption=prompt_result.normalized_prompt,
+            requested_entities=(),
+            requested_prompt=prompt_result.original_prompt,
+            metadata=prompt_result.as_metadata(),
+            route=prompt_result.as_route(),
+        )
+    requested_entities = entities_for_categories(categories or ())
+    caption = build_caption(requested_entities)
+    return GroundingPromptPreparation(
+        caption=caption,
+        requested_entities=requested_entities,
+        requested_prompt=caption,
+        metadata={
+            "grounding_prompt_raw": caption,
+            "grounding_prompt_normalized": caption,
+            "grounding_prompt_normalization_mode": "categories",
+            "grounding_prompt_normalization_profile": (
+                prompt_normalization_profile
+                if prompt_normalization_mode == "canonical_terms"
+                else None
+            ),
+            "grounding_prompt_applied_aliases": [],
+        },
+        route=None,
+    )
+
+
 def normalized_cxcywh_to_xyxy(
     box: Sequence[float],
     *,
@@ -200,9 +244,7 @@ def normalized_cxcywh_to_xyxy(
         raise ValueError("normalized box must contain four coordinates")
     if width < 1 or height < 1:
         raise ValueError("image dimensions must be positive")
-    center_x, center_y, box_width, box_height = [
-        float(value) for value in box
-    ]
+    center_x, center_y, box_width, box_height = [float(value) for value in box]
     x1 = max(0.0, min(float(width), (center_x - box_width / 2) * width))
     y1 = max(
         0.0,
@@ -255,9 +297,7 @@ class GroundingDINOAdapter:
             ("BERT directory", self.config.bert_path),
         ):
             expects_directory = "root" in label or "directory" in label
-            expected = (
-                path.is_dir() if expects_directory else path.is_file()
-            )
+            expected = path.is_dir() if expects_directory else path.is_file()
             if not expected:
                 raise FileNotFoundError(f"{label} not found: {path}")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -331,39 +371,13 @@ class GroundingDINOAdapter:
             if prompt_translation_failure_policy is not None
             else self.config.prompt_translation_failure_policy
         )
-        if prompt is not None:
-            prompt_result = normalize_prompt_result(
-                prompt,
-                mode=effective_mode,
-                profile=effective_profile,
-                translator=self.prompt_translator,
-                translation_failure_policy=effective_failure_policy,
-            )
-            return GroundingPromptPreparation(
-                caption=prompt_result.normalized_prompt,
-                requested_entities=(),
-                requested_prompt=prompt_result.original_prompt,
-                metadata=prompt_result.as_metadata(),
-                route=prompt_result.as_route(),
-            )
-        requested_entities = entities_for_categories(categories or ())
-        caption = build_caption(requested_entities)
-        return GroundingPromptPreparation(
-            caption=caption,
-            requested_entities=requested_entities,
-            requested_prompt=caption,
-            metadata={
-                "grounding_prompt_raw": caption,
-                "grounding_prompt_normalized": caption,
-                "grounding_prompt_normalization_mode": "categories",
-                "grounding_prompt_normalization_profile": (
-                    effective_profile
-                    if effective_mode == "canonical_terms"
-                    else None
-                ),
-                "grounding_prompt_applied_aliases": [],
-            },
-            route=None,
+        return prepare_grounding_prompt(
+            prompt=prompt,
+            categories=categories,
+            prompt_normalization_mode=effective_mode,
+            prompt_normalization_profile=effective_profile,
+            prompt_translation_failure_policy=effective_failure_policy,
+            prompt_translator=self.prompt_translator,
         )
 
     def predict(
@@ -386,9 +400,7 @@ class GroundingDINOAdapter:
             categories=categories,
             prompt_normalization_mode=prompt_normalization_mode,
             prompt_normalization_profile=prompt_normalization_profile,
-            prompt_translation_failure_policy=(
-                prompt_translation_failure_policy
-            ),
+            prompt_translation_failure_policy=(prompt_translation_failure_policy),
         )
         caption = preparation.caption
         requested_entities = list(preparation.requested_entities)
@@ -405,10 +417,7 @@ class GroundingDINOAdapter:
             )
         prediction_logits = outputs["pred_logits"].cpu().sigmoid()[0]
         prediction_boxes = outputs["pred_boxes"].cpu()[0]
-        mask = (
-            prediction_logits.max(dim=1)[0]
-            > self.config.box_threshold
-        )
+        mask = prediction_logits.max(dim=1)[0] > self.config.box_threshold
         logits = prediction_logits[mask]
         boxes = prediction_boxes[mask]
         tokenizer = self._model.tokenizer
@@ -425,9 +434,7 @@ class GroundingDINOAdapter:
         detections: list[GroundingDINODetection] = []
         for box, score, phrase in zip(boxes, scores, phrases):
             box_values = (
-                box.detach().cpu().tolist()
-                if hasattr(box, "detach")
-                else list(box)
+                box.detach().cpu().tolist() if hasattr(box, "detach") else list(box)
             )
             xyxy = normalized_cxcywh_to_xyxy(
                 box_values,
@@ -437,9 +444,7 @@ class GroundingDINOAdapter:
             if xyxy is None:
                 continue
             confidence = float(
-                score.detach().cpu().item()
-                if hasattr(score, "detach")
-                else score
+                score.detach().cpu().item() if hasattr(score, "detach") else score
             )
             detections.append(
                 GroundingDINODetection(

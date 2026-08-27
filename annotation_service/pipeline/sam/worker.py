@@ -17,11 +17,12 @@ from PIL import Image
 
 from ..runtime import OperationHeartbeat
 from .adapter import (
-    SAMAdapter,
     SAMMaskCandidate,
     SAMModelConfig,
     render_sam_candidate,
 )
+from .factory import build_mask_predictor
+from ..remote import RemoteProviderConfig
 from ...storage.repository import AnnotationStore
 
 
@@ -71,9 +72,7 @@ def combine_sam_candidates(
         detection_id = ids[instance_index - 1] if ids else None
         for shape_index, shape in enumerate(candidate.shapes, start=1):
             combined_shape = dict(shape)
-            combined_shape["shape_id"] = (
-                f"sam-instance-{instance_index}-{shape_index}"
-            )
+            combined_shape["shape_id"] = f"sam-instance-{instance_index}-{shape_index}"
             if detection_id is not None:
                 combined_shape["source_detection_id"] = detection_id
             shapes.append(combined_shape)
@@ -88,9 +87,7 @@ def combine_sam_candidates(
         image=image,
         mask=union_mask,
         box_xyxy=union_box,
-        predicted_iou=sum(
-            candidate.predicted_iou for candidate in candidates
-        )
+        predicted_iou=sum(candidate.predicted_iou for candidate in candidates)
         / len(candidates),
         model_version=candidates[0].model_version,
         polygon_epsilon=polygon_epsilon,
@@ -112,23 +109,25 @@ class MaskPredictor(Protocol):
         *,
         image_path: Path,
         box_xyxy: list[float],
-    ) -> SAMMaskCandidate:
-        ...
+    ) -> SAMMaskCandidate: ...
 
 
 def _integer(name: str, default: int, minimum: int, maximum: int) -> int:
     value = int(os.getenv(name, str(default)))
     if value < minimum or value > maximum:
-        raise ValueError(
-            f"{name} must be between {minimum} and {maximum}"
-        )
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
 
 
 @dataclass(frozen=True)
 class SAMWorkerSettings:
     storage_root: Path
-    checkpoint_path: Path
+    provider: str
+    checkpoint_path: Path | None
+    remote_base_url: str | None
+    remote_api_key: str | None
+    remote_timeout_seconds: float
+    remote_max_image_bytes: int
     model_type: str
     device: str
     python_package: str
@@ -148,10 +147,21 @@ class SAMWorkerSettings:
             "ANNOTATION_SAM_CHECKPOINT",
             "",
         ).strip()
+        provider = os.getenv("ANNOTATION_SAM_PROVIDER", "local").strip().lower()
+        if provider not in {"local", "remote"}:
+            raise ValueError("ANNOTATION_SAM_PROVIDER must be local or remote")
         if not storage_root:
             raise ValueError("ANNOTATION_STORAGE_ROOT must not be empty")
-        if not checkpoint:
+        if provider == "local" and not checkpoint:
             raise ValueError("ANNOTATION_SAM_CHECKPOINT must not be empty")
+        remote_base_url = (
+            os.getenv("ANNOTATION_SAM_REMOTE_BASE_URL", "").strip() or None
+        )
+        if provider == "remote" and remote_base_url is None:
+            raise ValueError(
+                "ANNOTATION_SAM_REMOTE_BASE_URL must not be empty for the "
+                "remote provider"
+            )
         lease = _integer(
             "ANNOTATION_SAM_LEASE_SECONDS",
             300,
@@ -165,12 +175,25 @@ class SAMWorkerSettings:
             600,
         )
         if heartbeat >= lease:
-            raise ValueError(
-                "ANNOTATION_SAM_HEARTBEAT_SECONDS must be less than lease"
-            )
+            raise ValueError("ANNOTATION_SAM_HEARTBEAT_SECONDS must be less than lease")
         return cls(
             storage_root=Path(storage_root).expanduser().resolve(),
-            checkpoint_path=Path(checkpoint).expanduser().resolve(),
+            provider=provider,
+            checkpoint_path=(
+                Path(checkpoint).expanduser().resolve() if checkpoint else None
+            ),
+            remote_base_url=remote_base_url,
+            remote_api_key=os.getenv("ANNOTATION_SAM_REMOTE_API_KEY", "").strip()
+            or None,
+            remote_timeout_seconds=float(
+                os.getenv("ANNOTATION_SAM_REMOTE_TIMEOUT_SECONDS", "120")
+            ),
+            remote_max_image_bytes=_integer(
+                "ANNOTATION_SAM_REMOTE_MAX_IMAGE_BYTES",
+                20 * 1024 * 1024,
+                1,
+                100 * 1024 * 1024,
+            ),
             model_type=os.getenv(
                 "ANNOTATION_SAM_MODEL_TYPE",
                 "vit_h",
@@ -187,9 +210,7 @@ class SAMWorkerSettings:
                 "ANNOTATION_SAM_MODEL_VERSION",
                 "sam-vit-h-4b8939",
             ).strip(),
-            polygon_epsilon=float(
-                os.getenv("ANNOTATION_SAM_POLYGON_EPSILON", "1.0")
-            ),
+            polygon_epsilon=float(os.getenv("ANNOTATION_SAM_POLYGON_EPSILON", "1.0")),
             max_batch_size=_integer(
                 "ANNOTATION_SAM_MAX_BATCH_SIZE",
                 16,
@@ -208,12 +229,12 @@ class SAMWorkerSettings:
             ).strip(),
             lease_seconds=lease,
             heartbeat_seconds=heartbeat,
-            poll_seconds=float(
-                os.getenv("ANNOTATION_SAM_POLL_SECONDS", "0.2")
-            ),
+            poll_seconds=float(os.getenv("ANNOTATION_SAM_POLL_SECONDS", "0.2")),
         )
 
     def model_config(self) -> SAMModelConfig:
+        if self.provider != "local" or self.checkpoint_path is None:
+            raise ValueError("local SAM provider is not configured")
         return SAMModelConfig(
             checkpoint_path=self.checkpoint_path,
             model_type=self.model_type,
@@ -221,9 +242,17 @@ class SAMWorkerSettings:
             python_package=self.python_package,
             model_version=self.model_version,
             polygon_epsilon=self.polygon_epsilon,
-            image_embedding_cache_size=(
-                self.image_embedding_cache_size
-            ),
+            image_embedding_cache_size=(self.image_embedding_cache_size),
+        )
+
+    def remote_config(self) -> RemoteProviderConfig:
+        if self.provider != "remote" or self.remote_base_url is None:
+            raise ValueError("SAM remote provider is not configured")
+        return RemoteProviderConfig(
+            base_url=self.remote_base_url,
+            api_key=self.remote_api_key,
+            timeout_seconds=self.remote_timeout_seconds,
+            max_image_bytes=self.remote_max_image_bytes,
         )
 
 
@@ -303,9 +332,7 @@ class SAMMaskWorker:
         max_batch_size: int = 16,
     ):
         if heartbeat_seconds >= lease_seconds:
-            raise ValueError(
-                "heartbeat_seconds must be less than lease_seconds"
-            )
+            raise ValueError("heartbeat_seconds must be less than lease_seconds")
         self.store = store
         self.predictor = predictor
         self.worker_id = worker_id
@@ -313,9 +340,7 @@ class SAMMaskWorker:
         self.heartbeat_seconds = heartbeat_seconds
         self.poll_seconds = poll_seconds
         if max_batch_size < 1 or max_batch_size > 128:
-            raise ValueError(
-                "max_batch_size must be between 1 and 128"
-            )
+            raise ValueError("max_batch_size must be between 1 and 128")
         self.max_batch_size = max_batch_size
         self._prefetch_created_after = (
             datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -356,8 +381,7 @@ class SAMMaskWorker:
             image_path, _ = self.store.asset_file(asset_id)
             timings = precompute(image_path=image_path)
             LOGGER.info(
-                "SAM background prefetch completed: asset_id=%s "
-                "timings=%s",
+                "SAM background prefetch completed: asset_id=%s timings=%s",
                 asset_id,
                 timings,
             )
@@ -439,21 +463,16 @@ class SAMMaskWorker:
             heartbeat.start()
         try:
             tasks = [
-                self.store.get_task(operation["task_id"])
-                for operation in operations
+                self.store.get_task(operation["task_id"]) for operation in operations
             ]
             for task, operation in zip(tasks, operations):
                 if task["version"] != operation["task_version"]:
                     raise ValueError(
                         "task version changed after mask operation was queued"
                     )
-            asset_ids = {
-                task["asset"]["asset_id"] for task in tasks
-            }
+            asset_ids = {task["asset"]["asset_id"] for task in tasks}
             if len(asset_ids) != 1:
-                raise ValueError(
-                    "SAM batch operations must reference one image"
-                )
+                raise ValueError("SAM batch operations must reference one image")
             image_path, _ = self.store.asset_file(asset_ids.pop())
             box_groups = []
             for operation in operations:
@@ -462,19 +481,13 @@ class SAMMaskWorker:
                 if boxes is None:
                     boxes = [request["box_xyxy"]]
                 box_groups.append(boxes)
-            flat_boxes = [
-                box
-                for boxes in box_groups
-                for box in boxes
-            ]
+            flat_boxes = [box for boxes in box_groups for box in boxes]
             predicted = self._predict_many(
                 image_path=image_path,
                 boxes_xyxy=flat_boxes,
             )
             if len(predicted) != len(flat_boxes):
-                raise ValueError(
-                    "SAM batch result count does not match box count"
-                )
+                raise ValueError("SAM batch result count does not match box count")
             candidates = []
             offset = 0
             polygon_epsilon = getattr(
@@ -483,9 +496,7 @@ class SAMMaskWorker:
                 1.0,
             )
             for operation, boxes in zip(operations, box_groups):
-                operation_candidates = predicted[
-                    offset:offset + len(boxes)
-                ]
+                operation_candidates = predicted[offset : offset + len(boxes)]
                 offset += len(boxes)
                 detection_ids = operation["request"].get(
                     "detection_ids",
@@ -506,8 +517,7 @@ class SAMMaskWorker:
                 "SAM batch mask generation failed",
                 extra={
                     "operation_ids": [
-                        operation["operation_id"]
-                        for operation in operations
+                        operation["operation_id"] for operation in operations
                     ]
                 },
             )
@@ -524,10 +534,7 @@ class SAMMaskWorker:
         ):
             operation_id = operation["operation_id"]
             try:
-                if (
-                    self.store.get_operation(operation_id)["status"]
-                    != "running"
-                ):
+                if self.store.get_operation(operation_id)["status"] != "running":
                     continue
                 result = persist_sam_candidate(
                     self.store,
@@ -558,12 +565,10 @@ def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     settings = SAMWorkerSettings.from_env()
-    config = settings.model_config()
-    config.validate()
+    predictor = build_mask_predictor(settings)
     store = AnnotationStore(settings.storage_root)
     store.initialize()
-    predictor = SAMAdapter(config)
-    if not args.once:
+    if not args.once and settings.provider == "local":
         predictor.warmup()
         LOGGER.info("SAM model preloaded and ready")
     worker = SAMMaskWorker(

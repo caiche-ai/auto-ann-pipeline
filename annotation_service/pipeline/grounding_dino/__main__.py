@@ -4,7 +4,7 @@ import argparse
 import logging
 
 from ...storage.repository import AnnotationStore
-from .adapter import GroundingDINOAdapter, GroundingDINOModelConfig
+from .factory import build_detection_predictor
 from .worker import GroundingDINOJobWorker
 from .settings import GroundingDINOWorkerSettings
 
@@ -31,32 +31,10 @@ def main() -> int:
     settings.validate_model_files()
     store = AnnotationStore(settings.storage_root)
     store.initialize()
-    predictor = GroundingDINOAdapter(
-        GroundingDINOModelConfig(
-            root=settings.grounding_dino_root,
-            config_path=settings.config_path,
-            checkpoint_path=settings.checkpoint_path,
-            bert_path=settings.bert_path,
-            device=settings.device,
-            model_version=settings.model_version,
-            prompt_version=settings.prompt_version,
-            prompt_normalization_mode=settings.prompt_normalization_mode,
-            prompt_normalization_profile=(
-                settings.prompt_normalization_profile
-            ),
-            prompt_translation_failure_policy=(
-                settings.prompt_translation_failure_policy
-            ),
-            box_threshold=settings.box_threshold,
-            text_threshold=settings.text_threshold,
-        ),
-        prompt_translator=settings.prompt_translator(),
-    )
-    if not args.once:
+    predictor = build_detection_predictor(settings)
+    if not args.once and settings.provider == "local":
         predictor.load()
-        logging.getLogger(__name__).info(
-            "GroundingDINO model preloaded and ready"
-        )
+        logging.getLogger(__name__).info("GroundingDINO model preloaded and ready")
     worker = GroundingDINOJobWorker(
         store=store,
         predictor=predictor,

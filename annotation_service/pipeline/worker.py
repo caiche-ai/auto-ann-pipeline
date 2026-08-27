@@ -6,14 +6,13 @@ import os
 import socket
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from .hazard_rules import HazardRuleEngine
 from .qwen.provider import Qwen25VLProvider, image_file_to_input
 from .qwen.worker import PromptProvider, _visual_context
 from .review_task_builder import materialize_candidate_tasks
-from .sam.adapter import SAMAdapter
+from .sam.factory import build_mask_predictor
 from .sam.worker import (
     MaskPredictor,
     SAMWorkerSettings,
@@ -21,11 +20,8 @@ from .sam.worker import (
 )
 from ..api.schemas import JobStatus, PipelineStage
 from ..storage.repository import AnnotationStore
-from .grounding_dino.adapter import (
-    DetectionPredictor,
-    GroundingDINOAdapter,
-    GroundingDINOModelConfig,
-)
+from .grounding_dino.adapter import DetectionPredictor
+from .grounding_dino.factory import build_detection_predictor
 from .grounding_dino.worker import LeaseHeartbeat
 from .grounding_dino.settings import GroundingDINOWorkerSettings
 from .qwen.worker import QwenWorkerSettings
@@ -61,9 +57,7 @@ class FullAnnotationPipelineWorker:
         poll_seconds: float = 2.0,
     ):
         if heartbeat_seconds >= lease_seconds:
-            raise ValueError(
-                "heartbeat_seconds must be less than lease_seconds"
-            )
+            raise ValueError("heartbeat_seconds must be less than lease_seconds")
         self.store = store
         self.detection_predictor = detection_predictor
         self.mask_predictor = mask_predictor
@@ -110,9 +104,7 @@ class FullAnnotationPipelineWorker:
         heartbeat.start()
         errors: list[dict[str, Any]] = []
         successful_assets: set[str] = set()
-        stage_failures: dict[str, int] = {
-            stage.value: 0 for stage in PipelineStage
-        }
+        stage_failures: dict[str, int] = {stage.value: 0 for stage in PipelineStage}
         try:
             for asset_id in job["asset_ids"]:
                 heartbeat.ensure_healthy()
@@ -178,9 +170,7 @@ class FullAnnotationPipelineWorker:
                         PipelineStage.QWEN_FACTS,
                         PipelineStage.QWEN_PROMPTS,
                     }:
-                        stage_failures[
-                            PipelineStage.QWEN_PROMPTS.value
-                        ] += 1
+                        stage_failures[PipelineStage.QWEN_PROMPTS.value] += 1
                     stage_failures[stage.value] += 1
                     errors.append(
                         {
@@ -190,9 +180,7 @@ class FullAnnotationPipelineWorker:
                             "message": str(exc)[:1000],
                         }
                     )
-                    successful_assets.discard(
-                        task["asset"]["asset_id"]
-                    )
+                    successful_assets.discard(task["asset"]["asset_id"])
                     self.store.update_job_asset(
                         job_id=job["job_id"],
                         asset_id=task["asset"]["asset_id"],
@@ -274,10 +262,7 @@ class FullAnnotationPipelineWorker:
             saved = self.store.replace_detections(
                 job_id=job["job_id"],
                 asset_id=asset_id,
-                detections=[
-                    detection.as_storage_payload()
-                    for detection in detections
-                ],
+                detections=[detection.as_storage_payload() for detection in detections],
                 worker_id=self.worker_id,
             )
         except Exception as exc:
@@ -295,10 +280,7 @@ class FullAnnotationPipelineWorker:
             self.store.replace_hazard_candidates(
                 job_id=job["job_id"],
                 asset_id=asset_id,
-                candidates=[
-                    candidate.as_storage_payload()
-                    for candidate in candidates
-                ],
+                candidates=[candidate.as_storage_payload() for candidate in candidates],
                 worker_id=self.worker_id,
             )
         except Exception as exc:
@@ -311,9 +293,7 @@ class FullAnnotationPipelineWorker:
         source_hazard = task.get("source_hazard")
         if not source_hazard:
             raise ValueError("pipeline task has no source hazard")
-        image_path, image_media_type = self.store.asset_file(
-            task["asset"]["asset_id"]
-        )
+        image_path, image_media_type = self.store.asset_file(task["asset"]["asset_id"])
         try:
             sam = self.mask_predictor.predict(
                 image_path=image_path,
@@ -380,12 +360,8 @@ class FullAnnotationPipelineWorker:
             "sam_version": sam.model_version,
             **result["provenance"],
         }
-        warnings = [
-            "SAM mask 和 Qwen Prompt 均为模型候选，必须经过人工审核。"
-        ]
-        if source_hazard["metadata"].get(
-            "requires_visual_verification"
-        ):
+        warnings = ["SAM mask 和 Qwen Prompt 均为模型候选，必须经过人工审核。"]
+        if source_hazard["metadata"].get("requires_visual_verification"):
             warnings.append("隐患规则使用弱负证据，必须人工确认。")
         self.store.replace_generated_task_content(
             task["task_id"],
@@ -425,13 +401,9 @@ class FullAnnotationPipelineWorker:
             failed = stage_failures.get(stage.value, 0)
             stages[stage.value] = {
                 "status": "failed" if failed else "succeeded",
-                "started_at": (
-                    stages.get(stage.value, {}).get("started_at") or now
-                ),
+                "started_at": (stages.get(stage.value, {}).get("started_at") or now),
                 "completed_at": now,
-                "message": (
-                    f"{messages[stage]}; {failed} failure(s)"
-                ),
+                "message": (f"{messages[stage]}; {failed} failure(s)"),
             }
         if not errors:
             status = JobStatus.SUCCEEDED
@@ -466,53 +438,23 @@ def main() -> int:
     sam = SAMWorkerSettings.from_env()
     qwen = QwenWorkerSettings.from_env()
     dino.validate_model_files()
-    sam_config = sam.model_config()
-    sam_config.validate()
     worker_id = os.getenv(
         "ANNOTATION_PIPELINE_WORKER_ID",
         f"{socket.gethostname()}-{os.getpid()}",
     ).strip()
-    lease_seconds = int(
-        os.getenv("ANNOTATION_PIPELINE_LEASE_SECONDS", "900")
-    )
-    heartbeat_seconds = int(
-        os.getenv("ANNOTATION_PIPELINE_HEARTBEAT_SECONDS", "60")
-    )
+    lease_seconds = int(os.getenv("ANNOTATION_PIPELINE_LEASE_SECONDS", "900"))
+    heartbeat_seconds = int(os.getenv("ANNOTATION_PIPELINE_HEARTBEAT_SECONDS", "60"))
     store = AnnotationStore(dino.storage_root)
     store.initialize()
     worker = FullAnnotationPipelineWorker(
         store=store,
-        detection_predictor=GroundingDINOAdapter(
-            GroundingDINOModelConfig(
-                root=dino.grounding_dino_root,
-                config_path=dino.config_path,
-                checkpoint_path=dino.checkpoint_path,
-                bert_path=dino.bert_path,
-                device=dino.device,
-                model_version=dino.model_version,
-                prompt_version=dino.prompt_version,
-                prompt_normalization_mode=(
-                    dino.prompt_normalization_mode
-                ),
-                prompt_normalization_profile=(
-                    dino.prompt_normalization_profile
-                ),
-                prompt_translation_failure_policy=(
-                    dino.prompt_translation_failure_policy
-                ),
-                box_threshold=dino.box_threshold,
-                text_threshold=dino.text_threshold,
-            ),
-            prompt_translator=dino.prompt_translator(),
-        ),
-        mask_predictor=SAMAdapter(sam_config),
+        detection_predictor=build_detection_predictor(dino),
+        mask_predictor=build_mask_predictor(sam),
         prompt_provider=Qwen25VLProvider(qwen.provider_config()),
         worker_id=worker_id,
         lease_seconds=lease_seconds,
         heartbeat_seconds=heartbeat_seconds,
-        poll_seconds=float(
-            os.getenv("ANNOTATION_PIPELINE_POLL_SECONDS", "2")
-        ),
+        poll_seconds=float(os.getenv("ANNOTATION_PIPELINE_POLL_SECONDS", "2")),
     )
     try:
         if args.once:

@@ -18,6 +18,7 @@ from .translation import (
     OpenAICompatiblePromptTranslator,
     PromptTranslationConfig,
 )
+from ..remote import RemoteProviderConfig
 
 
 def _required(name: str) -> str:
@@ -40,9 +41,7 @@ def _integer(
     except ValueError as exc:
         raise ValueError(f"{name} must be an integer") from exc
     if value < minimum or value > maximum:
-        raise ValueError(
-            f"{name} must be between {minimum} and {maximum}"
-        )
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
 
 
@@ -59,19 +58,22 @@ def _floating(
     except ValueError as exc:
         raise ValueError(f"{name} must be a number") from exc
     if value < minimum or value > maximum:
-        raise ValueError(
-            f"{name} must be between {minimum} and {maximum}"
-        )
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
 
 
 @dataclass(frozen=True)
 class GroundingDINOWorkerSettings:
     storage_root: Path
-    grounding_dino_root: Path
-    config_path: Path
-    checkpoint_path: Path
-    bert_path: Path
+    provider: str
+    grounding_dino_root: Path | None
+    config_path: Path | None
+    checkpoint_path: Path | None
+    bert_path: Path | None
+    remote_base_url: str | None
+    remote_api_key: str | None
+    remote_timeout_seconds: float
+    remote_max_image_bytes: int
     device: str
     model_version: str
     prompt_version: str
@@ -94,11 +96,22 @@ class GroundingDINOWorkerSettings:
 
     @classmethod
     def from_env(cls) -> "GroundingDINOWorkerSettings":
-        grounding_root = Path(
-            _required("ANNOTATION_GROUNDING_DINO_ROOT")
-        ).expanduser().resolve()
+        provider = (
+            os.getenv("ANNOTATION_GROUNDING_DINO_PROVIDER", "local").strip().lower()
+        )
+        if provider not in {"local", "remote"}:
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_PROVIDER must be local or remote"
+            )
+        grounding_root = None
+        if provider == "local":
+            grounding_root = (
+                Path(_required("ANNOTATION_GROUNDING_DINO_ROOT")).expanduser().resolve()
+            )
 
         def model_path(name: str, default: str) -> Path:
+            if grounding_root is None:
+                raise ValueError(f"{name} is only available for the local provider")
             configured = Path(os.getenv(name, default).strip()).expanduser()
             if configured.is_absolute():
                 return configured.resolve()
@@ -127,17 +140,14 @@ class GroundingDINOWorkerSettings:
         ).strip()
         if not worker_id or len(worker_id) > 128:
             raise ValueError(
-                "ANNOTATION_WORKER_ID must contain between 1 and 128 "
-                "characters"
+                "ANNOTATION_WORKER_ID must contain between 1 and 128 characters"
             )
         device = os.getenv(
             "ANNOTATION_GROUNDING_DINO_DEVICE",
             "cuda",
         ).strip()
         if not device:
-            raise ValueError(
-                "ANNOTATION_GROUNDING_DINO_DEVICE must not be empty"
-            )
+            raise ValueError("ANNOTATION_GROUNDING_DINO_DEVICE must not be empty")
         model_version = os.getenv(
             "ANNOTATION_GROUNDING_DINO_MODEL_VERSION",
             "groundingdino-swint-ogc",
@@ -168,10 +178,7 @@ class GroundingDINOWorkerSettings:
                 "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_PROFILE "
                 "must not be empty"
             )
-        if (
-            prompt_normalization_profile
-            not in PROMPT_NORMALIZATION_PROFILE_NAMES
-        ):
+        if prompt_normalization_profile not in PROMPT_NORMALIZATION_PROFILE_NAMES:
             raise ValueError(
                 "ANNOTATION_GROUNDING_DINO_PROMPT_NORMALIZATION_PROFILE "
                 "must be one of: "
@@ -186,59 +193,93 @@ class GroundingDINOWorkerSettings:
             and prompt_normalization_profile != expected_profile
         ):
             raise ValueError(
-                f"{prompt_normalization_mode} requires profile "
-                f"{expected_profile}"
+                f"{prompt_normalization_mode} requires profile {expected_profile}"
             )
         prompt_translation_failure_policy = os.getenv(
             "ANNOTATION_GROUNDING_DINO_PROMPT_TRANSLATION_FAILURE_POLICY",
             "fallback_canonical_terms",
         ).strip()
-        if (
-            prompt_translation_failure_policy
-            not in PROMPT_TRANSLATION_FAILURE_POLICIES
-        ):
+        if prompt_translation_failure_policy not in PROMPT_TRANSLATION_FAILURE_POLICIES:
             raise ValueError(
                 "ANNOTATION_GROUNDING_DINO_PROMPT_TRANSLATION_FAILURE_POLICY "
                 "must be one of: "
                 f"{', '.join(PROMPT_TRANSLATION_FAILURE_POLICIES)}"
             )
-        prompt_translator_base_url = os.getenv(
-            "ANNOTATION_PROMPT_TRANSLATOR_BASE_URL",
-            os.getenv("ANNOTATION_QWEN_BASE_URL", ""),
-        ).strip() or None
+        prompt_translator_base_url = (
+            os.getenv(
+                "ANNOTATION_PROMPT_TRANSLATOR_BASE_URL",
+                os.getenv("ANNOTATION_QWEN_BASE_URL", ""),
+            ).strip()
+            or None
+        )
         prompt_translator_model = os.getenv(
             "ANNOTATION_PROMPT_TRANSLATOR_MODEL",
             os.getenv("ANNOTATION_QWEN_MODEL", "qwen25vl"),
         ).strip()
         if not prompt_translator_model:
-            raise ValueError(
-                "ANNOTATION_PROMPT_TRANSLATOR_MODEL must not be empty"
-            )
+            raise ValueError("ANNOTATION_PROMPT_TRANSLATOR_MODEL must not be empty")
         prompt_translator_prompt_version = os.getenv(
             "ANNOTATION_PROMPT_TRANSLATOR_PROMPT_VERSION",
             OPEN_SEMANTIC_PROMPT_VERSION,
         ).strip()
         if not prompt_translator_prompt_version:
             raise ValueError(
-                "ANNOTATION_PROMPT_TRANSLATOR_PROMPT_VERSION must not be "
-                "empty"
+                "ANNOTATION_PROMPT_TRANSLATOR_PROMPT_VERSION must not be empty"
+            )
+        remote_base_url = (
+            os.getenv("ANNOTATION_GROUNDING_DINO_REMOTE_BASE_URL", "").strip() or None
+        )
+        if provider == "remote" and remote_base_url is None:
+            raise ValueError(
+                "ANNOTATION_GROUNDING_DINO_REMOTE_BASE_URL must not be empty "
+                "for the remote provider"
             )
         return cls(
-            storage_root=Path(
-                _required("ANNOTATION_STORAGE_ROOT")
-            ).expanduser().resolve(),
+            storage_root=Path(_required("ANNOTATION_STORAGE_ROOT"))
+            .expanduser()
+            .resolve(),
+            provider=provider,
             grounding_dino_root=grounding_root,
-            config_path=model_path(
-                "ANNOTATION_GROUNDING_DINO_CONFIG",
-                "groundingdino/config/GroundingDINO_SwinT_OGC.py",
+            config_path=(
+                model_path(
+                    "ANNOTATION_GROUNDING_DINO_CONFIG",
+                    "groundingdino/config/GroundingDINO_SwinT_OGC.py",
+                )
+                if provider == "local"
+                else None
             ),
-            checkpoint_path=model_path(
-                "ANNOTATION_GROUNDING_DINO_CHECKPOINT",
-                "weights/groundingdino_swint_ogc.pth",
+            checkpoint_path=(
+                model_path(
+                    "ANNOTATION_GROUNDING_DINO_CHECKPOINT",
+                    "weights/groundingdino_swint_ogc.pth",
+                )
+                if provider == "local"
+                else None
             ),
-            bert_path=model_path(
-                "ANNOTATION_GROUNDING_DINO_BERT",
-                "weights/bert-base-uncased",
+            bert_path=(
+                model_path(
+                    "ANNOTATION_GROUNDING_DINO_BERT",
+                    "weights/bert-base-uncased",
+                )
+                if provider == "local"
+                else None
+            ),
+            remote_base_url=remote_base_url,
+            remote_api_key=os.getenv(
+                "ANNOTATION_GROUNDING_DINO_REMOTE_API_KEY", ""
+            ).strip()
+            or None,
+            remote_timeout_seconds=_floating(
+                "ANNOTATION_GROUNDING_DINO_REMOTE_TIMEOUT_SECONDS",
+                120.0,
+                minimum=1.0,
+                maximum=3600.0,
+            ),
+            remote_max_image_bytes=_integer(
+                "ANNOTATION_GROUNDING_DINO_REMOTE_MAX_IMAGE_BYTES",
+                20 * 1024 * 1024,
+                minimum=1,
+                maximum=100 * 1024 * 1024,
             ),
             device=device,
             model_version=model_version,
@@ -273,9 +314,7 @@ class GroundingDINOWorkerSettings:
                 minimum=0.0,
                 maximum=1.0,
             ),
-            prompt_translator_prompt_version=(
-                prompt_translator_prompt_version
-            ),
+            prompt_translator_prompt_version=(prompt_translator_prompt_version),
             box_threshold=_floating(
                 "ANNOTATION_GROUNDING_DINO_BOX_THRESHOLD",
                 0.35,
@@ -317,6 +356,16 @@ class GroundingDINOWorkerSettings:
         )
 
     def validate_model_files(self) -> None:
+        if self.provider == "remote":
+            self.remote_config()
+            return
+        if (
+            self.grounding_dino_root is None
+            or self.config_path is None
+            or self.checkpoint_path is None
+            or self.bert_path is None
+        ):
+            raise ValueError("local GroundingDINO model paths are incomplete")
         if not self.grounding_dino_root.is_dir():
             raise FileNotFoundError(
                 f"GroundingDINO root not found: {self.grounding_dino_root}"
@@ -326,9 +375,7 @@ class GroundingDINOWorkerSettings:
             ("checkpoint", self.checkpoint_path),
         ):
             if not path.is_file():
-                raise FileNotFoundError(
-                    f"GroundingDINO {label} not found: {path}"
-                )
+                raise FileNotFoundError(f"GroundingDINO {label} not found: {path}")
         if not self.bert_path.is_dir():
             raise FileNotFoundError(
                 f"GroundingDINO BERT directory not found: {self.bert_path}"
@@ -345,3 +392,13 @@ class GroundingDINOWorkerSettings:
                 raise FileNotFoundError(
                     f"GroundingDINO BERT file missing or empty: {path}"
                 )
+
+    def remote_config(self) -> RemoteProviderConfig:
+        if self.provider != "remote" or self.remote_base_url is None:
+            raise ValueError("GroundingDINO remote provider is not configured")
+        return RemoteProviderConfig(
+            base_url=self.remote_base_url,
+            api_key=self.remote_api_key,
+            timeout_seconds=self.remote_timeout_seconds,
+            max_image_bytes=self.remote_max_image_bytes,
+        )
