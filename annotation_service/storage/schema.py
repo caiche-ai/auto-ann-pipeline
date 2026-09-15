@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -661,5 +661,53 @@ SCHEMA_V10 = (
     """
     CREATE INDEX idx_operations_task
     ON annotation_operations(task_id, created_at)
+    """,
+)
+
+
+SCHEMA_V11 = (
+    """
+    CREATE TABLE annotation_workspace_tasks (
+        workspace_task_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX idx_workspace_tasks_updated
+    ON annotation_workspace_tasks(updated_at DESC)
+    """,
+    """
+    CREATE TABLE annotation_workspace_items (
+        workspace_task_id TEXT NOT NULL,
+        asset_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+        prompt TEXT NOT NULL DEFAULT '',
+        job_id TEXT,
+        annotation_task_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (workspace_task_id, asset_id),
+        UNIQUE (workspace_task_id, ordinal),
+        FOREIGN KEY (workspace_task_id)
+            REFERENCES annotation_workspace_tasks(workspace_task_id)
+            ON DELETE CASCADE,
+        FOREIGN KEY (asset_id)
+            REFERENCES assets(asset_id) ON DELETE CASCADE,
+        FOREIGN KEY (job_id)
+            REFERENCES annotation_jobs(job_id) ON DELETE SET NULL,
+        FOREIGN KEY (annotation_task_id)
+            REFERENCES annotation_tasks(task_id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE INDEX idx_workspace_items_asset
+    ON annotation_workspace_items(asset_id)
+    """,
+    """
+    CREATE INDEX idx_workspace_items_job
+    ON annotation_workspace_items(job_id)
     """,
 )

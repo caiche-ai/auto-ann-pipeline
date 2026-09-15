@@ -186,6 +186,48 @@ class Asset(StrictModel):
         return value
 
 
+class CreateWorkspaceTaskRequest(StrictModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    description: str = Field(default="", max_length=300)
+
+    @validator("name")
+    def name_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be blank")
+        return normalized
+
+
+class WorkspaceTask(StrictModel):
+    workspace_task_id: str
+    name: str
+    description: str = ""
+    item_count: int = Field(default=0, ge=0)
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceTaskList(StrictModel):
+    items: List[WorkspaceTask] = Field(default_factory=list)
+    total: int = Field(..., ge=0)
+
+
+class WorkspaceTaskItem(StrictModel):
+    ordinal: int = Field(..., ge=0)
+    prompt: str = ""
+    job_id: Optional[str] = None
+    annotation_task_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    asset: Asset
+
+
+class UpdateWorkspaceTaskItemRequest(StrictModel):
+    prompt: Optional[str] = Field(default=None, max_length=2000)
+    job_id: Optional[str] = None
+    annotation_task_id: Optional[str] = None
+
+
 class JobOptions(StrictModel):
     generate_masks: bool = True
     enrich_prompts: bool = True

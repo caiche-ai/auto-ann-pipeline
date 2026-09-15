@@ -31,6 +31,7 @@ from .routes.releases import build_releases_router
 from .routes.task_batches import build_task_batches_router
 from .routes.task_groups import build_task_groups_router
 from .routes.tasks import build_tasks_router
+from .routes.workspace_tasks import build_workspace_tasks_router
 from ..storage.repository import AnnotationStore, StorageBackend
 
 
@@ -115,7 +116,7 @@ def create_app(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
             allow_credentials=settings.cors_allow_credentials,
-            allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=[
                 "Authorization",
                 "Content-Type",
@@ -297,6 +298,13 @@ def create_app(
     )
     app.include_router(
         build_releases_router(
+            storage=cast(AnnotationStore | None, storage),
+            authenticate=authenticate,
+        )
+    )
+    app.include_router(
+        build_workspace_tasks_router(
+            settings=settings,
             storage=cast(AnnotationStore | None, storage),
             authenticate=authenticate,
         )

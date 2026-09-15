@@ -11,13 +11,12 @@
   "dependencies": {
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "react-router-dom": "latest"
+    "react-dom": "latest"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
     "typescript": "latest",
     "vite": "latest"
   }

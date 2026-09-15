@@ -16,6 +16,25 @@ export interface Asset {
   created_at: string
 }
 
+export interface WorkspaceTask {
+  workspace_task_id: string
+  name: string
+  description: string
+  item_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceTaskItem {
+  ordinal: number
+  prompt: string
+  job_id?: string | null
+  annotation_task_id?: string | null
+  created_at: string
+  updated_at: string
+  asset: Asset
+}
+
 export interface Detection {
   detection_id: string
   asset_id?: string
@@ -62,6 +81,19 @@ export interface Job {
   stages: Record<string, { status: string; started_at?: string; completed_at?: string; message?: string }>
   errors: Array<{ asset_id?: string; stage?: string; code: string; message: string }>
   created_at: string; started_at?: string | null; completed_at?: string | null
+}
+
+export interface AnnotationOperation {
+  operation_id: string
+  operation_type: 'mask_candidate' | 'prompt_enrichment' | 'joint_prompt_enrichment'
+  task_id?: string | null
+  task_version?: number | null
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  result?: Record<string, unknown> | null
+  error?: { message?: string } | null
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
 }
 
 export interface Release {

@@ -129,6 +129,22 @@ class AnnotationAppTest(unittest.TestCase):
         self.assertEqual(document["openapi"], "3.0.3")
 
         expected_operations = {
+            (
+                "/v1/annotation/workspace-tasks",
+                "post",
+            ): "createWorkspaceTask",
+            (
+                "/v1/annotation/workspace-tasks",
+                "get",
+            ): "listWorkspaceTasks",
+            (
+                "/v1/annotation/workspace-tasks/{workspace_task_id}/assets",
+                "post",
+            ): "uploadWorkspaceTaskAsset",
+            (
+                "/v1/annotation/workspace-tasks/{workspace_task_id}/assets",
+                "get",
+            ): "listWorkspaceTaskAssets",
             ("/v1/annotation/assets", "post"): "createAsset",
             ("/v1/annotation/assets/{asset_id}", "get"): "getAsset",
             (

@@ -8,10 +8,11 @@ import shutil
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Iterator, Protocol, Sequence
 
 from ..api.errors import (
     IdempotencyConflictError,
@@ -57,6 +58,7 @@ from .schema import (
     SCHEMA_V8,
     SCHEMA_V9,
     SCHEMA_V10,
+    SCHEMA_V11,
     SCHEMA_VERSION,
 )
 
@@ -367,6 +369,24 @@ class AnnotationStore:
                         except Exception:
                             connection.execute("ROLLBACK")
                             raise
+                        current = 10
+                    if current < 11:
+                        connection.execute("BEGIN IMMEDIATE")
+                        try:
+                            for statement in SCHEMA_V11:
+                                connection.execute(statement)
+                            connection.execute(
+                                """
+                                INSERT INTO schema_migrations(
+                                    version, applied_at
+                                ) VALUES (?, ?)
+                                """,
+                                (11, utc_now()),
+                            )
+                            connection.execute("COMMIT")
+                        except Exception:
+                            connection.execute("ROLLBACK")
+                            raise
                 self._initialized = True
             except Exception as exc:
                 raise StorageUnavailableError(
@@ -437,7 +457,8 @@ class AnnotationStore:
         ).fetchone()
         return row is not None
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(
             self.db_path,
             timeout=5.0,
@@ -447,7 +468,10 @@ class AnnotationStore:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 5000")
         connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+        try:
+            yield connection
+        finally:
+            connection.close()
 
     def _ensure_initialized(self) -> None:
         if not self._initialized:
@@ -517,6 +541,285 @@ class AnnotationStore:
         if row is None:
             raise ResourceNotFoundError(f"{resource} was not found")
         return row
+
+    # --------------------------------------------------------- workspace tasks
+    def create_workspace_task(
+        self,
+        *,
+        name: str,
+        description: str = "",
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("workspace task name must not be blank")
+        workspace_task_id = _new_id("wst")
+        created_at = utc_now()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO annotation_workspace_tasks (
+                        workspace_task_id, name, description,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        workspace_task_id,
+                        normalized_name,
+                        description.strip(),
+                        created_at,
+                        created_at,
+                    ),
+                )
+        except Exception as exc:
+            raise StorageError("failed to create workspace task") from exc
+        return self.get_workspace_task(workspace_task_id)
+
+    def get_workspace_task(self, workspace_task_id: str) -> dict[str, Any]:
+        self._ensure_initialized()
+        with self._connect() as connection:
+            row = self._row_or_not_found(
+                connection,
+                """
+                SELECT wt.*, COUNT(wi.asset_id) AS item_count
+                FROM annotation_workspace_tasks wt
+                LEFT JOIN annotation_workspace_items wi
+                  ON wi.workspace_task_id = wt.workspace_task_id
+                WHERE wt.workspace_task_id = ?
+                GROUP BY wt.workspace_task_id
+                """,
+                (workspace_task_id,),
+                "workspace task",
+            )
+        return self._workspace_task_payload(row)
+
+    def list_workspace_tasks(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        with self._connect() as connection:
+            total = connection.execute(
+                "SELECT COUNT(*) FROM annotation_workspace_tasks"
+            ).fetchone()[0]
+            rows = connection.execute(
+                """
+                SELECT wt.*, COUNT(wi.asset_id) AS item_count
+                FROM annotation_workspace_tasks wt
+                LEFT JOIN annotation_workspace_items wi
+                  ON wi.workspace_task_id = wt.workspace_task_id
+                GROUP BY wt.workspace_task_id
+                ORDER BY wt.updated_at DESC, wt.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+        return {
+            "items": [self._workspace_task_payload(row) for row in rows],
+            "total": total,
+        }
+
+    @staticmethod
+    def _workspace_task_payload(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "workspace_task_id": row["workspace_task_id"],
+            "name": row["name"],
+            "description": row["description"],
+            "item_count": row["item_count"] if "item_count" in row.keys() else 0,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def attach_workspace_asset(
+        self,
+        workspace_task_id: str,
+        asset_id: str,
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        now = utc_now()
+        try:
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                self._row_or_not_found(
+                    connection,
+                    "SELECT workspace_task_id FROM annotation_workspace_tasks WHERE workspace_task_id = ?",
+                    (workspace_task_id,),
+                    "workspace task",
+                )
+                asset = self._row_or_not_found(
+                    connection,
+                    "SELECT asset_id, group_id FROM assets WHERE asset_id = ?",
+                    (asset_id,),
+                    "asset",
+                )
+                if asset["group_id"] != workspace_task_id:
+                    raise ValidationServiceError(
+                        "asset does not belong to workspace task",
+                        details=[{"field": "asset_id", "reason": "asset group_id does not match workspace task"}],
+                    )
+                ordinal = connection.execute(
+                    """
+                    SELECT COALESCE(MAX(ordinal), -1) + 1
+                    FROM annotation_workspace_items
+                    WHERE workspace_task_id = ?
+                    """,
+                    (workspace_task_id,),
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO annotation_workspace_items (
+                        workspace_task_id, asset_id, ordinal, prompt,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, '', ?, ?)
+                    """,
+                    (workspace_task_id, asset_id, ordinal, now, now),
+                )
+                connection.execute(
+                    "UPDATE annotation_workspace_tasks SET updated_at = ? WHERE workspace_task_id = ?",
+                    (now, workspace_task_id),
+                )
+                connection.execute("COMMIT")
+        except (ResourceNotFoundError, ValidationServiceError):
+            raise
+        except Exception as exc:
+            raise StorageError("failed to attach workspace asset") from exc
+        return self.get_workspace_item(workspace_task_id, asset_id)
+
+    def get_workspace_item(
+        self,
+        workspace_task_id: str,
+        asset_id: str,
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        with self._connect() as connection:
+            row = self._row_or_not_found(
+                connection,
+                """
+                SELECT wi.ordinal, wi.prompt, wi.job_id,
+                       wi.annotation_task_id, wi.created_at AS item_created_at,
+                       wi.updated_at AS item_updated_at, a.*
+                FROM annotation_workspace_items wi
+                JOIN assets a ON a.asset_id = wi.asset_id
+                WHERE wi.workspace_task_id = ? AND wi.asset_id = ?
+                """,
+                (workspace_task_id, asset_id),
+                "workspace item",
+            )
+        return self._workspace_item_payload(row)
+
+    def list_workspace_items(
+        self,
+        workspace_task_id: str,
+    ) -> list[dict[str, Any]]:
+        self._ensure_initialized()
+        self.get_workspace_task(workspace_task_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT wi.ordinal, wi.prompt, wi.job_id,
+                       wi.annotation_task_id, wi.created_at AS item_created_at,
+                       wi.updated_at AS item_updated_at, a.*
+                FROM annotation_workspace_items wi
+                JOIN assets a ON a.asset_id = wi.asset_id
+                WHERE wi.workspace_task_id = ?
+                ORDER BY wi.ordinal
+                """,
+                (workspace_task_id,),
+            ).fetchall()
+        return [self._workspace_item_payload(row) for row in rows]
+
+    def _workspace_item_payload(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "ordinal": row["ordinal"],
+            "prompt": row["prompt"],
+            "job_id": row["job_id"],
+            "annotation_task_id": row["annotation_task_id"],
+            "created_at": row["item_created_at"],
+            "updated_at": row["item_updated_at"],
+            "asset": self._asset_payload(row),
+        }
+
+    def update_workspace_item(
+        self,
+        workspace_task_id: str,
+        asset_id: str,
+        changes: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        allowed = {"prompt", "job_id", "annotation_task_id"}
+        updates = {key: value for key, value in changes.items() if key in allowed}
+        if not updates:
+            return self.get_workspace_item(workspace_task_id, asset_id)
+        if "prompt" in updates:
+            updates["prompt"] = str(updates["prompt"] or "")
+        now = utc_now()
+        try:
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                self._row_or_not_found(
+                    connection,
+                    "SELECT asset_id FROM annotation_workspace_items WHERE workspace_task_id = ? AND asset_id = ?",
+                    (workspace_task_id, asset_id),
+                    "workspace item",
+                )
+                if updates.get("job_id") is not None:
+                    self._row_or_not_found(
+                        connection,
+                        "SELECT job_id FROM annotation_jobs WHERE job_id = ?",
+                        (updates["job_id"],),
+                        "annotation job",
+                    )
+                if updates.get("annotation_task_id") is not None:
+                    self._row_or_not_found(
+                        connection,
+                        "SELECT task_id FROM annotation_tasks WHERE task_id = ?",
+                        (updates["annotation_task_id"],),
+                        "annotation task",
+                    )
+                assignments = [f"{key} = ?" for key in updates]
+                values = list(updates.values())
+                assignments.append("updated_at = ?")
+                values.append(now)
+                values.extend([workspace_task_id, asset_id])
+                connection.execute(
+                    f"UPDATE annotation_workspace_items SET {', '.join(assignments)} WHERE workspace_task_id = ? AND asset_id = ?",
+                    values,
+                )
+                connection.execute(
+                    "UPDATE annotation_workspace_tasks SET updated_at = ? WHERE workspace_task_id = ?",
+                    (now, workspace_task_id),
+                )
+                connection.execute("COMMIT")
+        except ResourceNotFoundError:
+            raise
+        except Exception as exc:
+            raise StorageError("failed to update workspace item") from exc
+        return self.get_workspace_item(workspace_task_id, asset_id)
+
+    def remove_workspace_item(
+        self,
+        workspace_task_id: str,
+        asset_id: str,
+    ) -> None:
+        self._ensure_initialized()
+        now = utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "DELETE FROM annotation_workspace_items WHERE workspace_task_id = ? AND asset_id = ?",
+                (workspace_task_id, asset_id),
+            )
+            if cursor.rowcount == 0:
+                connection.execute("ROLLBACK")
+                raise ResourceNotFoundError("workspace item was not found")
+            connection.execute(
+                "UPDATE annotation_workspace_tasks SET updated_at = ? WHERE workspace_task_id = ?",
+                (now, workspace_task_id),
+            )
+            connection.execute("COMMIT")
 
     # ------------------------------------------------------------------ assets
     def create_asset(
